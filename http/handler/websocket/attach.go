@@ -8,6 +8,7 @@ import (
 
 	"github.com/portainer/agent"
 	"github.com/portainer/agent/http/proxy"
+	"github.com/portainer/portainer/api/ws"
 	httperror "github.com/portainer/portainer/pkg/libhttp/error"
 	"github.com/portainer/portainer/pkg/libhttp/request"
 
@@ -35,6 +36,7 @@ func (handler *Handler) websocketOperation(
 	}
 
 	proxy.WebsocketRequest(w, r, targetMember)
+
 	return nil
 }
 
@@ -60,8 +62,7 @@ func (handler *Handler) handleAttachRequest(w http.ResponseWriter, r *http.Reque
 	}
 	defer websocketConn.Close()
 
-	err = hijackAttachStartOperation(websocketConn, attachID)
-	if err != nil {
+	if err := hijackAttachStartOperation(websocketConn, attachID); err != nil {
 		return httperror.InternalServerError("An error occurred during websocket attach operation", err)
 	}
 
@@ -93,7 +94,7 @@ func hijackStartOperation(
 		return err
 	}
 
-	return hijackRequest(websocketConn, dial, startRequest)
+	return ws.HijackRequest(websocketConn, dial, startRequest)
 }
 
 func hijackAttachStartOperation(websocketConn *websocket.Conn, attachID string) error {

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/portainer/agent"
+	"github.com/portainer/portainer/api/ws"
 	httperror "github.com/portainer/portainer/pkg/libhttp/error"
 	"github.com/portainer/portainer/pkg/libhttp/request"
 
@@ -50,8 +51,8 @@ func (handler *Handler) websocketPodExec(w http.ResponseWriter, r *http.Request)
 	defer stdoutWriter.Close()
 
 	errorChan := make(chan error, 1)
-	go streamFromWebsocketToWriter(websocketConn, stdinWriter, errorChan)
-	go streamFromReaderToWebsocket(websocketConn, stdoutReader, errorChan)
+	go ws.StreamFromWebsocketToWriter(websocketConn, stdinWriter, errorChan)
+	go ws.StreamFromReaderToWebsocket(websocketConn, stdoutReader, errorChan)
 
 	err = handler.kubeClient.StartExecProcess(token, namespace, podName, containerName, commandArray, stdinReader, stdoutWriter)
 	if err != nil {
