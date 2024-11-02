@@ -2,6 +2,7 @@ package kubernetes
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	portainer "github.com/portainer/portainer/api"
@@ -15,12 +16,12 @@ import (
 func CreateSnapshot() (*portainer.KubernetesSnapshot, error) {
 	cli, err := buildLocalClient()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unable to create Kubernetes client. Error: %w", err)
 	}
 
 	res := cli.RESTClient().Get().AbsPath("/healthz").Do(context.TODO())
 	if res.Error() != nil {
-		return nil, res.Error()
+		return nil, fmt.Errorf("failed to ping /healthz endpoint. Error: %w", res.Error())
 	}
 
 	snapshot := &portainer.KubernetesSnapshot{}
