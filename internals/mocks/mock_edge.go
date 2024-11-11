@@ -24,6 +24,7 @@ import (
 type MockPortainerClient struct {
 	ctrl     *gomock.Controller
 	recorder *MockPortainerClientMockRecorder
+	isgomock struct{}
 }
 
 // MockPortainerClientMockRecorder is the mock recorder for MockPortainerClient.

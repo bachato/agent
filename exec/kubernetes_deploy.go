@@ -9,26 +9,29 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/portainer/agent"
+	"github.com/portainer/agent/kubernetes"
 )
 
 // KubernetesDeployer represents a service to deploy resources inside a Kubernetes environment.
 type KubernetesDeployer struct {
-	command string
+	command    string
+	kubeClient *kubernetes.KubeClient
 }
 
 // NewKubernetesDeployer initializes a new KubernetesDeployer service.
-func NewKubernetesDeployer(binaryPath string) *KubernetesDeployer {
+func NewKubernetesDeployer(binaryPath string, kubeClient *kubernetes.KubeClient) *KubernetesDeployer {
 	command := path.Join(binaryPath, "kubectl")
 	if runtime.GOOS == "windows" {
 		command = path.Join(binaryPath, "kubectl.exe")
 	}
 
 	return &KubernetesDeployer{
-		command: command,
+		command:    command,
+		kubeClient: kubeClient,
 	}
 }
 
-func (deployer *KubernetesDeployer) operation(ctx context.Context, name string, filePaths []string, operation, namespace string) error {
+func (deployer *KubernetesDeployer) operation(_ context.Context, _ string, filePaths []string, operation, namespace string) error {
 	if len(filePaths) == 0 {
 		return errors.New("missing file paths")
 	}

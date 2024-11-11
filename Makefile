@@ -33,6 +33,9 @@ credential-helper: ## Build the credential helper (used by edge private registri
 download-binaries: ## Download dependant binaries
 	@./setup.sh $(PLATFORM) $(ARCH)
 
+image: ## Build the agent and the image
+	@./dev.sh build -c
+
 ##@ Dependencies
 
 tidy: ## Tidy up the go.mod file
@@ -52,6 +55,10 @@ lint:   ## Run linter
 clean: ## Remove all build and download artifacts
 	@echo "Clearing the dist directory..."
 	@rm -f dist/*
+
+mock: ## Regenerate the internals/mocks/* files | DL = go install go.uber.org/mock/mockgen@latest
+	mockgen -source=./agent.go -destination=./internals/mocks/mock_agent.go -package mocks
+	mockgen -source=./edge/client/interface.go -destination=./internals/mocks/mock_edge.go -package mocks
 
 ##@ Helpers
 

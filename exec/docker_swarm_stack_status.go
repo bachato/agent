@@ -14,7 +14,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func (service *DockerSwarmStackService) WaitForStatus(ctx context.Context, name string, status libstack.Status) <-chan libstack.WaitResult {
+func (service *DockerSwarmStackService) WaitForStatus(ctx context.Context, name string, status libstack.Status, _ string) <-chan libstack.WaitResult {
 	waitResultCh := make(chan libstack.WaitResult)
 	waitResult := libstack.WaitResult{
 		Status: status,
@@ -93,6 +93,7 @@ func (service *DockerSwarmStackService) WaitForStatus(ctx context.Context, name 
 
 			log.Debug().
 				Str("project_name", name).
+				Str("required_status", string(status)).
 				Str("status", string(aggregateStatus)).
 				Msg("waiting for status")
 		}
@@ -184,7 +185,6 @@ func getServiceStatus(ctx context.Context, cli *client.Client, service swarm.Ser
 		case swarm.TaskStateRunning:
 			return libstack.StatusRunning, "", nil
 		case swarm.TaskStatePending, swarm.TaskStateStarting:
-			// case swarm.Task
 			return libstack.StatusStarting, "", nil
 		case swarm.TaskStateRemove:
 			return libstack.StatusRemoving, "", nil

@@ -240,7 +240,7 @@ func (client *PortainerEdgeClient) SetEdgeStackStatus(
 
 	log.Debug().
 		Int("edgeStackID", edgeStackID).
-		Int("edgeStackStatus", int(edgeStackStatus)).
+		Str("edgeStackStatus", edgeStackStatus.String()).
 		Int("time_check", int(payload.Time)).
 		Msg("SetEdgeStackStatus")
 

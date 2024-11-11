@@ -188,7 +188,7 @@ type (
 		Validate(ctx context.Context, name string, filePaths []string, options ValidateOptions) error
 		// WaitForStatus waits until status is reached or an error occurred
 		// if the received value is an empty string it means the status was
-		WaitForStatus(ctx context.Context, name string, status libstack.Status) <-chan libstack.WaitResult
+		WaitForStatus(ctx context.Context, name string, status libstack.Status, stackFileLocation string) <-chan libstack.WaitResult
 	}
 
 	DeployerBaseOptions struct {

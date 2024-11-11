@@ -34,7 +34,7 @@ import (
 func init() {
 	zerolog.ErrorStackFieldName = "stack_trace"
 	zerolog.ErrorStackMarshaler = pkgerrors.MarshalStack
-	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
+	zerolog.TimeFieldFormat = zerolog.TimeFormatUnixNano
 
 	log.Logger = log.Logger.With().Caller().Stack().Logger()
 }
@@ -163,7 +163,7 @@ func main() {
 			log.Fatal().Err(err).Msg("unable to create Kubernetes client")
 		}
 
-		kubernetesDeployer = exec.NewKubernetesDeployer(options.AssetsPath)
+		kubernetesDeployer = exec.NewKubernetesDeployer(options.AssetsPath, kubeClient)
 
 		clusterService = cluster.NewClusterService(runtimeConfiguration)
 
@@ -233,6 +233,7 @@ func main() {
 			ClusterService:    clusterService,
 			DockerInfoService: dockerInfoService,
 			ContainerPlatform: containerPlatform,
+			KubeClient:        kubeClient,
 		}
 
 		edgeManager = edge.NewManager(edgeManagerParameters)
@@ -331,12 +332,12 @@ func setLoggingMode(mode string) {
 	case "PRETTY":
 		log.Logger = log.Output(zerolog.ConsoleWriter{
 			Out:           goos.Stderr,
-			TimeFormat:    "2006/01/02 03:04PM",
+			TimeFormat:    "2006/01/02 03:04:05.999PM",
 			FormatMessage: formatMessage})
 	case "NOCOLOR":
 		log.Logger = log.Output(zerolog.ConsoleWriter{
 			Out:           goos.Stderr,
-			TimeFormat:    "2006/01/02 03:04PM",
+			TimeFormat:    "2006/01/02 03:04:05.999PM",
 			FormatMessage: formatMessage,
 			NoColor:       true,
 		})

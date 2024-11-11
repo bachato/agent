@@ -12,6 +12,7 @@ import (
 	"github.com/portainer/agent/edge/client"
 	"github.com/portainer/agent/edge/scheduler"
 	"github.com/portainer/agent/edge/stack"
+	"github.com/portainer/agent/kubernetes"
 	portainer "github.com/portainer/portainer/api"
 	"github.com/portainer/portainer/api/filesystem"
 
@@ -26,6 +27,7 @@ type (
 		agentOptions      *agent.Options
 		clusterService    agent.ClusterService
 		dockerInfoService agent.DockerInfoService
+		kubeClient        *kubernetes.KubeClient
 		key               *edgeKey
 		logsManager       *scheduler.LogsManager
 		pollService       *PollService
@@ -40,6 +42,7 @@ type (
 		ClusterService    agent.ClusterService
 		DockerInfoService agent.DockerInfoService
 		ContainerPlatform agent.ContainerPlatform
+		KubeClient        *kubernetes.KubeClient
 	}
 )
 
@@ -55,6 +58,7 @@ func NewManager(parameters *ManagerParameters) *Manager {
 		agentOptions:      parameters.Options,
 		advertiseAddr:     parameters.AdvertiseAddr,
 		containerPlatform: parameters.ContainerPlatform,
+		kubeClient:        parameters.KubeClient,
 	}
 }
 
@@ -111,6 +115,7 @@ func (manager *Manager) Start() error {
 		manager.agentOptions.AssetsPath,
 		aws.ExtractAwsConfig(manager.agentOptions),
 		manager.agentOptions.EdgeID,
+		manager.kubeClient,
 	)
 
 	manager.logsManager = scheduler.NewLogsManager(portainerClient)
