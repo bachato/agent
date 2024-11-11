@@ -15,17 +15,10 @@ type DockerComposeStackService struct {
 
 // NewDockerComposeStackService initializes a new DockerStackService service.
 // It also updates the configuration of the Docker CLI binary.
-func NewDockerComposeStackService(binaryPath string) (*DockerComposeStackService, error) {
-	deployer, err := compose.NewComposeDeployer(binaryPath, "")
-	if err != nil {
-		return nil, err
+func NewDockerComposeStackService(binaryPath string) *DockerComposeStackService {
+	return &DockerComposeStackService{
+		deployer: compose.NewComposeDeployer(),
 	}
-
-	service := &DockerComposeStackService{
-		deployer: deployer,
-	}
-
-	return service, nil
 }
 
 // Deploy executes the docker stack deploy command.
@@ -36,6 +29,7 @@ func (service *DockerComposeStackService) Deploy(ctx context.Context, name strin
 			WorkingDir:  options.WorkingDir,
 			Env:         options.Env,
 		},
+		RemoveOrphans: options.Prune,
 	})
 }
 
@@ -50,9 +44,11 @@ func (service *DockerComposeStackService) Pull(ctx context.Context, name string,
 
 // Remove executes the docker stack rm command.
 func (service *DockerComposeStackService) Remove(ctx context.Context, name string, filePaths []string, options agent.RemoveOptions) error {
-	return service.deployer.Remove(ctx, name, filePaths, libstack.Options{
-		ProjectName: name,
-		Env:         options.Env,
+	return service.deployer.Remove(ctx, name, filePaths, libstack.RemoveOptions{
+		Options: libstack.Options{
+			ProjectName: name,
+			Env:         options.Env,
+		},
 	})
 }
 

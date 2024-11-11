@@ -28,15 +28,6 @@ func ensureIntegrationTest(t *testing.T) {
 
 */
 
-func setupSwarmStackDeployer(t *testing.T) *DockerSwarmStackService {
-	service, err := NewDockerSwarmStackService("")
-	if err != nil {
-		t.Fatalf("Failed to create docker swarm stack service: %v", err)
-	}
-
-	return service
-}
-
 func TestComposeProjectStatus(t *testing.T) {
 	ensureIntegrationTest(t)
 
@@ -56,7 +47,7 @@ services:
 		},
 	}
 
-	w := setupSwarmStackDeployer(t)
+	w := NewDockerSwarmStackService("")
 	ctx := context.Background()
 	dir := t.TempDir()
 

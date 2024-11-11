@@ -23,25 +23,17 @@ type DockerSwarmDeployOpts struct {
 
 // NewDockerSwarmStackService initializes a new DockerStackService service.
 // It also updates the configuration of the Docker CLI binary.
-func NewDockerSwarmStackService(binaryPath string) (*DockerSwarmStackService, error) {
-	// Assume Linux as a default
+func NewDockerSwarmStackService(binaryPath string) *DockerSwarmStackService {
 	command := path.Join(binaryPath, "docker")
 
 	if runtime.GOOS == "windows" {
 		command = path.Join(binaryPath, "docker.exe")
 	}
 
-	composeDeployer, err := compose.NewComposeDeployer(binaryPath, "")
-	if err != nil {
-		return nil, err
-	}
-
-	service := &DockerSwarmStackService{
+	return &DockerSwarmStackService{
 		command:         command,
-		composeDeployer: composeDeployer,
+		composeDeployer: compose.NewComposeDeployer(),
 	}
-
-	return service, nil
 }
 
 // Deploy executes the docker stack deploy command.

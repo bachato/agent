@@ -11,7 +11,6 @@ USER ContainerAdministrator
 COPY dist/mingit/ mingit/
 COPY dist/agent.exe /app/
 COPY dist/docker.exe /app/
-COPY dist/docker-compose.exe /app/
 COPY dist/docker-credential-portainer.exe /app/
 COPY dist/kubectl.exe /app/
 

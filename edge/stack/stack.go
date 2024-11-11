@@ -854,9 +854,9 @@ func (manager *StackManager) SetEngineType(engineTyp engineType) error {
 func (manager *StackManager) buildDeployerService(assetsPath string, engineStatus engineType) (agent.Deployer, error) {
 	switch engineStatus {
 	case EngineTypeDockerStandalone:
-		return exec.NewDockerComposeStackService(assetsPath)
+		return exec.NewDockerComposeStackService(assetsPath), nil
 	case EngineTypeDockerSwarm:
-		return exec.NewDockerSwarmStackService(assetsPath)
+		return exec.NewDockerSwarmStackService(assetsPath), nil
 	case EngineTypeKubernetes:
 		return exec.NewKubernetesDeployer(assetsPath, manager.kubeClient), nil
 	}
