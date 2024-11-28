@@ -7,8 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
-	"sync"
 	"time"
 
 	"github.com/portainer/agent"
@@ -16,8 +14,6 @@ import (
 	"github.com/portainer/agent/edge/aws"
 	"github.com/portainer/agent/edge/client"
 	"github.com/portainer/agent/edge/yaml"
-	"github.com/portainer/agent/exec"
-	"github.com/portainer/agent/kubernetes"
 	portainer "github.com/portainer/portainer/api"
 	"github.com/portainer/portainer/api/edge"
 	"github.com/portainer/portainer/api/filesystem"
@@ -26,128 +22,10 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-type edgeStackID int
-
-type edgeStack struct {
-	edge.StackPayload
-
-	FileFolder string
-	FileName   string
-	Status     edgeStackStatus
-	Action     edgeStackAction
-
-	PullCount    int
-	PullFinished bool
-	DeployCount  int
-
-	FirstAction time.Time
-	LastAction  time.Time
-}
-
-type edgeStackStatus int
-
-const (
-	_ edgeStackStatus = iota
-	StatusPending
-	StatusDeployed
-	StatusError
-	StatusDeploying
-	StatusRetry
-	StatusRemoving
-	StatusAwaitingDeployedStatus
-	StatusAwaitingRemovedStatus
-	StatusCompleted
-	StatusAwaitingCleanup
-)
-
-var edgeStackStatusStr = map[edgeStackStatus]string{
-	StatusPending:                "Pending",
-	StatusDeployed:               "Deployed",
-	StatusError:                  "Error",
-	StatusDeploying:              "Deploying",
-	StatusRetry:                  "Retry",
-	StatusRemoving:               "Removing",
-	StatusAwaitingDeployedStatus: "AwaitingDeployedStatus",
-	StatusAwaitingRemovedStatus:  "AwaitingRemovedStatus",
-	StatusCompleted:              "Completed",
-	StatusAwaitingCleanup:        "AwaitingCleanup",
-}
-
-func (s edgeStackStatus) String() string {
-	if str, ok := edgeStackStatusStr[s]; ok {
-		return fmt.Sprintf("%d (%s)", s, str)
-	}
-	return fmt.Sprintf("%d (UNKNOWN)", s)
-}
-
-type edgeStackAction int
-
-const (
-	_ edgeStackAction = iota
-	actionDeploy
-	actionUpdate
-	actionDelete
-	actionIdle
-)
-
-var edgeStackActionStr = map[edgeStackAction]string{
-	actionDeploy: "Deploy",
-	actionUpdate: "Update",
-	actionDelete: "Delete",
-	actionIdle:   "Idle",
-}
-
-func (a edgeStackAction) String() string {
-	if str, ok := edgeStackActionStr[a]; ok {
-		return fmt.Sprintf("%d (%s)", a, str)
-	}
-	return fmt.Sprintf("%d (UNKNOWN)", a)
-}
-
 const queueSleepInterval = agent.EdgeStackQueueSleepIntervalSeconds * time.Second
 const perHourRetries = 3600 / 5
 const maxRetries = perHourRetries * 24 * 7 // retry for maximum 1 week
-
-type engineType int
-
-const (
-	// TODO: consider defining this in agent.go or re-use/enhance some of the existing constants
-	// that are declared in agent.go
-	_ engineType = iota
-	EngineTypeDockerStandalone
-	EngineTypeDockerSwarm
-	EngineTypeKubernetes
-	// Deprecated
-	EngineTypeNomad
-)
-
-// StackManager represents a service for managing Edge stacks
-type StackManager struct {
-	engineType      engineType
-	edgeID          string
-	stacks          map[edgeStackID]*edgeStack
-	stopSignal      chan struct{}
-	deployer        agent.Deployer
-	isEnabled       bool
-	portainerClient client.PortainerClient
-	assetsPath      string
-	awsConfig       *agent.AWSConfig
-	mu              sync.Mutex
-	kubeClient      *kubernetes.KubeClient
-}
-
-// NewStackManager returns a pointer to a new instance of StackManager
-func NewStackManager(cli client.PortainerClient, assetsPath string, config *agent.AWSConfig, edgeID string, kubeClient *kubernetes.KubeClient) *StackManager {
-	return &StackManager{
-		stacks:          map[edgeStackID]*edgeStack{},
-		stopSignal:      nil,
-		portainerClient: cli,
-		assetsPath:      assetsPath,
-		awsConfig:       config,
-		edgeID:          edgeID,
-		kubeClient:      kubeClient,
-	}
-}
+var waitingStatuses = []edgeStackStatus{StatusAwaitingDeployedStatus, StatusAwaitingRemovedStatus, StatusAwaitingCleanup}
 
 func (manager *StackManager) UpdateStacksStatus(pollResponseStacks map[int]client.StackStatus) error {
 	manager.mu.Lock()
@@ -203,17 +81,6 @@ func (manager *StackManager) addRegistryToEntryFile(stackPayload *edge.StackPayl
 	}
 
 	return nil
-}
-
-func getStackFileFolder(stack *edgeStack) string {
-	stackIDStr := strconv.Itoa(stack.ID)
-
-	folder := filepath.Join(agent.EdgeStackFilesPath, stackIDStr)
-	if IsRelativePathStack(stack) {
-		folder = filepath.Join(stack.FilesystemPath, agent.ComposePathPrefix, stackIDStr)
-	}
-
-	return folder
 }
 
 func (manager *StackManager) processStack(stackID int, stackStatus client.StackStatus) error {
@@ -310,50 +177,6 @@ func (manager *StackManager) processRemovedStacks(pollResponseStacks map[int]cli
 	}
 }
 
-func (manager *StackManager) Stop() {
-	manager.mu.Lock()
-	defer manager.mu.Unlock()
-
-	if manager.stopSignal != nil {
-		close(manager.stopSignal)
-		manager.stopSignal = nil
-		manager.isEnabled = false
-	}
-}
-
-func (manager *StackManager) Start() error {
-	manager.mu.Lock()
-	defer manager.mu.Unlock()
-
-	if manager.stopSignal != nil {
-		return nil
-	}
-
-	manager.isEnabled = true
-	manager.stopSignal = make(chan struct{})
-
-	go func() {
-		for {
-			manager.mu.Lock()
-
-			select {
-			case <-manager.stopSignal:
-				manager.mu.Unlock()
-
-				log.Debug().Msg("shutting down Edge stack manager")
-
-				return
-			default:
-				manager.mu.Unlock()
-
-				manager.performActionOnStack()
-			}
-		}
-	}()
-
-	return nil
-}
-
 // this function performs actions based on stack action and status
 // - stack.Action is tracking actions performed by user in the UI (Create Update Delete) and defined/driven by the poll loop
 // - stack.Status is tracking the deployment lifecycle (A to B transitions to reach the desired runtime state)
@@ -430,8 +253,6 @@ func (manager *StackManager) performActionOnStack() {
 		manager.deleteStack(ctx, stack, stackName, stackFileLocation)
 	}
 }
-
-var waitingStatuses = []edgeStackStatus{StatusAwaitingDeployedStatus, StatusAwaitingRemovedStatus, StatusAwaitingCleanup}
 
 func (manager *StackManager) nextPendingStack() *edgeStack {
 	manager.mu.Lock()
@@ -766,15 +587,6 @@ func (manager *StackManager) deployStack(ctx context.Context, stack *edgeStack, 
 	stack.Status = StatusAwaitingDeployedStatus
 }
 
-func buildEnvVarsForDeployer(envVars []portainer.Pair) []string {
-	arr := make([]string, len(envVars))
-	for i, env := range envVars {
-		arr[i] = fmt.Sprintf("%s=%s", env.Name, env.Value)
-	}
-
-	return arr
-}
-
 // this function performs a cleanup of the stack state
 // - remove the files related to the stack from the host
 // - remove the stack entry from the  manager map
@@ -850,134 +662,6 @@ func (manager *StackManager) deleteStack(ctx context.Context, stack *edgeStack, 
 	stack.Status = StatusAwaitingRemovedStatus
 }
 
-func (manager *StackManager) SetEngineType(engineTyp engineType) error {
-	if engineTyp == manager.engineType {
-		return nil
-	}
-
-	manager.Stop()
-
-	deployer, err := manager.buildDeployerService(manager.assetsPath, engineTyp)
-	if err != nil {
-		return err
-	}
-
-	manager.engineType = engineTyp
-	manager.deployer = deployer
-
-	return nil
-}
-
-func (manager *StackManager) buildDeployerService(assetsPath string, engineStatus engineType) (agent.Deployer, error) {
-	switch engineStatus {
-	case EngineTypeDockerStandalone:
-		return exec.NewDockerComposeStackService(assetsPath), nil
-	case EngineTypeDockerSwarm:
-		return exec.NewDockerSwarmStackService(assetsPath), nil
-	case EngineTypeKubernetes:
-		return exec.NewKubernetesDeployer(assetsPath, manager.kubeClient), nil
-	}
-
-	return nil, fmt.Errorf("engine status %d not supported", engineStatus)
-}
-
-func (manager *StackManager) DeployStack(ctx context.Context, stackData edge.StackPayload) error {
-	return manager.buildDeployerParams(stackData, false)
-}
-
-func (manager *StackManager) DeleteStack(ctx context.Context, stackData edge.StackPayload) error {
-	return manager.buildDeployerParams(stackData, true)
-}
-
-func (manager *StackManager) buildDeployerParams(stackPayload edge.StackPayload, deleteStack bool) error {
-	var stack *edgeStack
-
-	// The stack information will be shared with edge agent registry server (request by docker credential helper)
-	manager.mu.Lock()
-	defer manager.mu.Unlock()
-
-	originalStack, processedStack := manager.stacks[edgeStackID(stackPayload.ID)]
-	if processedStack {
-		// update the cloned stack to keep data consistency
-		clonedStack := *originalStack
-		stack = &clonedStack
-
-		if deleteStack {
-			log.Debug().Int("stack_id", stackPayload.ID).Msg("marking stack for removal")
-
-			stack.Action = actionDelete
-		} else {
-			if stack.Version == stackPayload.Version && !stackPayload.ReadyRePullImage {
-				return nil
-			}
-
-			log.Debug().Int("stack_id", stackPayload.ID).Msg("marking stack for update")
-
-			stack.Action = actionUpdate
-			stack.ReadyRePullImage = stackPayload.ReadyRePullImage
-		}
-	} else {
-		if deleteStack {
-			log.Debug().Int("stack_id", stackPayload.ID).Msg("marking stack for removal")
-
-			stack = &edgeStack{
-				StackPayload: edge.StackPayload{
-					ID: stackPayload.ID,
-				},
-				Action: actionDelete,
-			}
-		} else {
-			log.Debug().Int("stack_id", stackPayload.ID).Msg("marking stack for deployment")
-
-			stack = &edgeStack{
-				StackPayload: edge.StackPayload{
-					ID: stackPayload.ID,
-				},
-				Action: actionDeploy,
-			}
-		}
-	}
-
-	stack.Name = stackPayload.Name
-	stack.RegistryCredentials = stackPayload.RegistryCredentials
-
-	stack.Status = StatusPending
-	stack.Version = stackPayload.Version
-
-	stack.PrePullImage = stackPayload.PrePullImage
-	stack.RePullImage = stackPayload.RePullImage
-	stack.RetryDeploy = stackPayload.RetryDeploy
-	stack.RetryPeriod = stackPayload.RetryPeriod
-	stack.PullCount = 0
-	stack.PullFinished = false
-	stack.DeployCount = 0
-
-	stack.SupportRelativePath = stackPayload.SupportRelativePath
-	stack.FilesystemPath = stackPayload.FilesystemPath
-	stack.FileName = stackPayload.EntryFileName
-	stack.FileFolder = getStackFileFolder(stack)
-	stack.EnvVars = stackPayload.EnvVars
-	stack.Namespace = stackPayload.Namespace
-
-	if err := filesystem.DecodeDirEntries(stackPayload.DirEntries); err != nil {
-		return err
-	}
-
-	if err := manager.addRegistryToEntryFile(&stackPayload); err != nil {
-		return err
-	}
-
-	if !deleteStack {
-		if err := filesystem.PersistDir(stack.FileFolder, stackPayload.DirEntries); err != nil {
-			return err
-		}
-	}
-
-	manager.stacks[edgeStackID(stack.ID)] = stack
-
-	return nil
-}
-
 func (manager *StackManager) GetEdgeRegistryCredentials() []edge.RegistryCredentials {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
@@ -989,25 +673,6 @@ func (manager *StackManager) GetEdgeRegistryCredentials() []edge.RegistryCredent
 	}
 
 	return nil
-}
-
-func (manager *StackManager) DeleteNormalStack(ctx context.Context, stackName string) error {
-	log.Debug().Str("stack_name", stackName).Msg("removing normal stack")
-
-	if err := manager.deployer.Remove(ctx, stackName, []string{}, agent.RemoveOptions{}); err != nil {
-		log.Error().Err(err).Msg("unable to remove normal stack")
-
-		return err
-	}
-
-	return nil
-}
-
-func (manager *StackManager) ResetStacks() {
-	manager.mu.Lock()
-	defer manager.mu.Unlock()
-
-	manager.stacks = map[edgeStackID]*edgeStack{}
 }
 
 func (manager *StackManager) ensureRegCreds(stack *edgeStack) []edge.RegistryCredentials {
@@ -1031,4 +696,13 @@ func (manager *StackManager) ensureRegCreds(stack *edgeStack) []edge.RegistryCre
 	}
 
 	return rcs
+}
+
+func buildEnvVarsForDeployer(envVars []portainer.Pair) []string {
+	arr := make([]string, len(envVars))
+	for i, env := range envVars {
+		arr[i] = fmt.Sprintf("%s=%s", env.Name, env.Value)
+	}
+
+	return arr
 }
