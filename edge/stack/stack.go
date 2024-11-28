@@ -598,7 +598,9 @@ func (manager *StackManager) cleanupStack(stack *edgeStack, stackName string) {
 
 	// Remove stack file folder
 	if err := os.RemoveAll(stack.FileFolder); err != nil {
-		log.Error().Err(err).
+		log.Warn().
+			Err(err).
+			Str("context", "EdgeStackManager").
 			Str("stack_file_folder", stack.FileFolder).
 			Msg("Unable to delete Edge stack folder")
 	}
@@ -606,7 +608,9 @@ func (manager *StackManager) cleanupStack(stack *edgeStack, stackName string) {
 	// Remove success stack file folder
 	successFileFolder := SuccessStackFileFolder(stack.FileFolder)
 	if err := os.RemoveAll(successFileFolder); err != nil {
-		log.Error().Err(err).
+		log.Warn().
+			Err(err).
+			Str("context", "EdgeStackManager").
 			Str("stack_success_file_folder", successFileFolder).
 			Msg("Unable to delete Edge stack success folder")
 	}
@@ -616,7 +620,9 @@ func (manager *StackManager) cleanupStack(stack *edgeStack, stackName string) {
 		dst := filepath.Join(stack.FilesystemPath, agent.ComposePathPrefix)
 
 		if err := docker.RemoveGitStackFromHost(stack.FileFolder, dst, stack.ID, stackName); err != nil {
-			log.Error().Err(err).
+			log.Warn().
+				Err(err).
+				Str("context", "EdgeStackManager").
 				Str("stack_file_folder", stack.FileFolder).
 				Msg("Unable to delete Edge stack git folder")
 		}
@@ -626,7 +632,9 @@ func (manager *StackManager) cleanupStack(stack *edgeStack, stackName string) {
 	delete(manager.stacks, edgeStackID(stack.ID))
 }
 
-// this function undeploys the stack (deployer.Remove()) and report its Removing status to the API
+// this function undeploys the stack (deployer.Remove()) and reports its Removing status to the API
+// Note: If the removal fails, the stack status is set to StatusAwaitingCleanup to bypass the waitForStatus() path,
+// which could lead to further errors. This ensures the stack proceeds directly to the cleanup process.
 func (manager *StackManager) deleteStack(ctx context.Context, stack *edgeStack, stackName, stackFileLocation string) {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
@@ -648,7 +656,16 @@ func (manager *StackManager) deleteStack(ctx context.Context, stack *edgeStack, 
 			},
 		},
 	); err != nil {
-		log.Error().Err(err).Msg("unable to remove stack")
+		log.Warn().
+			Err(err).
+			Str("context", "EdgeStackManager").
+			Msg("unable to remove Edge stack")
+
+		// If the stack removal fails, we set the status to StatusAwaitingCleanup.
+		// This avoids updating the status to StatusAwaitingRemovedStatus, which would trigger the waitForStatus() path
+		// and likely result in additional errors. By setting it to StatusAwaitingCleanup, we ensure the stack
+		// moves directly to the cleanup process.
+		stack.Status = StatusAwaitingCleanup
 
 		return
 	}
