@@ -4,7 +4,7 @@
 PLATFORM=$(shell go env GOOS)
 ARCH=$(shell go env GOARCH)
 
-GOTESTSUM=go run gotest.tools/gotestsum@v1.10.0
+GOTESTSUM=go run gotest.tools/gotestsum@latest
 
 ifeq ("$(PLATFORM)", "windows")
 agent=agent.exe
@@ -19,16 +19,20 @@ endif
 
 ##@ Building
 
-all: agent credential-helper download-binaries ## Build everything
+all: tidy credential-helper download-binaries mock agent ## Build everything
 
 agent: ## Build the agent
 	@echo "Building Portainer agent..."
 	@CGO_ENABLED=0 GOOS=$(PLATFORM) GOARCH=$(ARCH) go build -trimpath --installsuffix cgo --ldflags "-s" -o dist/$(agent) ./cmd/agent/
 
 credential-helper: ## Build the credential helper (used by edge private registries)
-	@echo "Building Portainer credential-helper..."
-	@cd cmd/docker-credential-portainer && \
-	CGO_ENABLED=0 GOOS=$(PLATFORM) GOARCH=$(ARCH) go build -trimpath --installsuffix cgo --ldflags "-s" -o ../../dist/$(credential-helper)
+	@if [ ! -f dist/$(credential-helper) ]; then \
+		echo "Building Portainer credential-helper..."; \
+		cd cmd/docker-credential-portainer && \
+		CGO_ENABLED=0 GOOS=$(PLATFORM) GOARCH=$(ARCH) go build -trimpath --installsuffix cgo --ldflags "-s" -o ../../dist/$(credential-helper); \
+	else \
+		echo "Credential helper already exists, skipping build."; \
+	fi
 
 download-binaries: ## Download dependant binaries
 	@./setup.sh $(PLATFORM) $(ARCH)
@@ -57,6 +61,7 @@ clean: ## Remove all build and download artifacts
 	@rm -f dist/*
 
 mock: ## Regenerate the internals/mocks/* files | DL = go install go.uber.org/mock/mockgen@latest
+	@go install go.uber.org/mock/mockgen@latest
 	mockgen -source=./agent.go -destination=./internals/mocks/mock_agent.go -package mocks
 	mockgen -source=./edge/client/interface.go -destination=./internals/mocks/mock_edge.go -package mocks
 
