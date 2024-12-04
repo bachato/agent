@@ -11,6 +11,8 @@ import (
 	"github.com/portainer/portainer/pkg/libstack/compose"
 )
 
+var _ agent.Deployer = &DockerSwarmStackService{}
+
 // DockerSwarmStackService represents a service for managing stacks by using the Docker binary.
 type DockerSwarmStackService struct {
 	command         string
@@ -89,4 +91,8 @@ func (service *DockerSwarmStackService) Remove(ctx context.Context, name string,
 	})
 
 	return err
+}
+
+func (service *DockerSwarmStackService) GetEdgeStacks(ctx context.Context) ([]agent.EdgeStack, error) {
+	return nil, nil
 }

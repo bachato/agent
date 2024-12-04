@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	portainer "github.com/portainer/portainer/api"
 	"github.com/portainer/portainer/api/edge"
 	"github.com/portainer/portainer/pkg/libstack"
 )
@@ -66,6 +67,11 @@ type (
 		Agent struct {
 			NodeName string `json:"NodeName"`
 		} `json:"Agent"`
+	}
+
+	EdgeStack struct {
+		ID   int
+		Name string
 	}
 
 	EdgeMetaFields struct {
@@ -190,6 +196,7 @@ type (
 		// WaitForStatus waits until status is reached or an error occurred
 		// if the received value is an empty string it means the status was
 		WaitForStatus(ctx context.Context, name string, status libstack.Status, options CheckStatusOptions) <-chan libstack.WaitResult
+		GetEdgeStacks(ctx context.Context) ([]EdgeStack, error)
 	}
 
 	DeployerBaseOptions struct {
@@ -202,7 +209,8 @@ type (
 
 	DeployOptions struct {
 		DeployerBaseOptions
-		Prune bool
+		Prune       bool
+		EdgeStackID portainer.EdgeStackID
 	}
 
 	RemoveOptions struct {

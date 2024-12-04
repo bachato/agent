@@ -1,6 +1,7 @@
 package stack
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -8,6 +9,8 @@ import (
 	"github.com/portainer/agent/edge/client"
 	"github.com/portainer/agent/exec"
 	"github.com/portainer/agent/kubernetes"
+	"github.com/portainer/portainer/api/edge"
+
 	"github.com/rs/zerolog/log"
 )
 
@@ -117,6 +120,33 @@ func (manager *StackManager) SetEngineType(engineTyp engineType) error {
 
 	manager.engineType = engineTyp
 	manager.deployer = deployer
+
+	return nil
+}
+
+// LoadExistingEdgeStacks loads all the edge stacks deployed by Portainer
+func (manager *StackManager) LoadExistingEdgeStacks(ctx context.Context) error {
+	edgeStacks, err := manager.deployer.GetEdgeStacks(ctx)
+	if err != nil {
+		return err
+	}
+
+	manager.mu.Lock()
+	for _, s := range edgeStacks {
+		if _, found := manager.stacks[edgeStackID(s.ID)]; found {
+			continue
+		}
+
+		manager.stacks[edgeStackID(s.ID)] = &edgeStack{
+			StackPayload: edge.StackPayload{
+				ID:   s.ID,
+				Name: s.Name,
+			},
+			Action: actionIdle,
+			Status: StatusPending,
+		}
+	}
+	manager.mu.Unlock()
 
 	return nil
 }

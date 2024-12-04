@@ -313,6 +313,21 @@ func (mr *MockDeployerMockRecorder) Deploy(ctx, name, filePaths, options any) *g
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Deploy", reflect.TypeOf((*MockDeployer)(nil).Deploy), ctx, name, filePaths, options)
 }
 
+// GetEdgeStacks mocks base method.
+func (m *MockDeployer) GetEdgeStacks(ctx context.Context) ([]agent.EdgeStack, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetEdgeStacks", ctx)
+	ret0, _ := ret[0].([]agent.EdgeStack)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetEdgeStacks indicates an expected call of GetEdgeStacks.
+func (mr *MockDeployerMockRecorder) GetEdgeStacks(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetEdgeStacks", reflect.TypeOf((*MockDeployer)(nil).GetEdgeStacks), ctx)
+}
+
 // Pull mocks base method.
 func (m *MockDeployer) Pull(ctx context.Context, name string, filePaths []string, options agent.PullOptions) error {
 	m.ctrl.T.Helper()

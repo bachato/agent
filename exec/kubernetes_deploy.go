@@ -12,6 +12,8 @@ import (
 	"github.com/portainer/agent/kubernetes"
 )
 
+var _ agent.Deployer = &KubernetesDeployer{}
+
 // KubernetesDeployer represents a service to deploy resources inside a Kubernetes environment.
 type KubernetesDeployer struct {
 	command    string
@@ -88,6 +90,10 @@ func (deployer *KubernetesDeployer) DeployRawConfig(token, config string, namesp
 	args = append(args, "apply", "-f", "-")
 
 	return runCommandAndCaptureStdErr(deployer.command, args, &cmdOpts{Input: config})
+}
+
+func (service *KubernetesDeployer) GetEdgeStacks(ctx context.Context) ([]agent.EdgeStack, error) {
+	return nil, nil
 }
 
 type argOptions struct {

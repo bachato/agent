@@ -1,6 +1,7 @@
 package edge
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
 	"math/rand"
@@ -43,6 +44,7 @@ type PollService struct {
 	tunnelServerAddr         string
 	tunnelServerFingerprint  string
 	tunnelProxy              string
+	firstPoll                bool
 
 	// Async mode only
 	pingInterval     time.Duration
@@ -99,6 +101,7 @@ func newPollService(edgeManager *Manager, edgeStackManager *stack.StackManager, 
 		tunnelServerFingerprint:  config.TunnelServerFingerprint,
 		tunnelProxy:              config.TunnelProxy,
 		portainerClient:          portainerClient,
+		firstPoll:                true,
 	}
 
 	if config.TunnelCapability {
@@ -140,6 +143,7 @@ func (service *PollService) startStatusPollLoop() {
 		Msg("starting Portainer short-polling client")
 
 	lastPollFailed := false
+
 	for {
 		select {
 		case <-pollCh:
@@ -153,7 +157,7 @@ func (service *PollService) startStatusPollLoop() {
 
 			err := service.poll()
 			if err != nil {
-				log.Error().Err(err).Msg("an error occured during short poll")
+				log.Error().Err(err).Msg("an error occurred during short poll")
 
 				lastPollFailed = true
 				service.pollTicker.Reset(time.Duration(service.pollIntervalInSeconds) * time.Second)
@@ -233,9 +237,8 @@ func (service *PollService) poll() error {
 		Float64("checkin_interval_seconds", environmentStatus.CheckinInterval).
 		Msg("")
 
-	tunnelErr := service.manageUpdateTunnel(*environmentStatus)
-	if tunnelErr != nil {
-		return tunnelErr
+	if err := service.manageUpdateTunnel(*environmentStatus); err != nil {
+		return err
 	}
 
 	service.processSchedules(environmentStatus.Schedules)
@@ -266,8 +269,7 @@ func (service *PollService) manageUpdateTunnel(environmentStatus client.PollStat
 			Str("status", environmentStatus.Status).
 			Msg("idle status detected, shutting down tunnel")
 
-		err := service.tunnelClient.CloseTunnel()
-		if err != nil {
+		if err := service.tunnelClient.CloseTunnel(); err != nil {
 			log.Error().Err(err).Msg("unable to shutdown tunnel")
 		}
 	}
@@ -275,8 +277,7 @@ func (service *PollService) manageUpdateTunnel(environmentStatus client.PollStat
 	if environmentStatus.Status == agent.TunnelStatusRequired && !service.tunnelClient.IsTunnelOpen() {
 		log.Debug().Msg("required status detected, creating reverse tunnel")
 
-		err := service.createTunnel(environmentStatus.Credentials, environmentStatus.Port)
-		if err != nil {
+		if err := service.createTunnel(environmentStatus.Credentials, environmentStatus.Port); err != nil {
 			log.Error().Err(err).Msg("unable to create tunnel")
 
 			return err
@@ -306,8 +307,7 @@ func (service *PollService) createTunnel(encodedCredentials string, remotePort i
 		RemotePort:        strconv.Itoa(remotePort),
 	}
 
-	err = service.tunnelClient.CreateTunnel(tunnelConfig)
-	if err != nil {
+	if err := service.tunnelClient.CreateTunnel(tunnelConfig); err != nil {
 		return err
 	}
 
@@ -316,15 +316,24 @@ func (service *PollService) createTunnel(encodedCredentials string, remotePort i
 }
 
 func (service *PollService) processSchedules(schedules []agent.Schedule) {
-	err := service.scheduleManager.Schedule(schedules)
-	if err != nil {
+	if err := service.scheduleManager.Schedule(schedules); err != nil {
 		log.Error().Err(err).Msg("an error occurred during schedule management")
 	}
 }
 
 func (service *PollService) processStacks(pollResponseStacks []client.StackStatus) error {
-	if pollResponseStacks == nil {
-		return nil
+	// Load existing edge stacks so they can be removed using the initial poll response
+	if service.firstPoll {
+		log.Info().Msg("loading the existing edge stacks")
+
+		ctx, cancelFn := context.WithTimeout(context.Background(), time.Minute)
+		defer cancelFn()
+
+		if err := service.edgeStackManager.LoadExistingEdgeStacks(ctx); err == nil {
+			service.firstPoll = false
+		} else {
+			log.Warn().Err(err).Msg("unable to retrieve the existing edge stacks")
+		}
 	}
 
 	stacks := map[int]client.StackStatus{}
@@ -332,8 +341,7 @@ func (service *PollService) processStacks(pollResponseStacks []client.StackStatu
 		stacks[s.ID] = s
 	}
 
-	err := service.edgeStackManager.UpdateStacksStatus(stacks)
-	if err != nil {
+	if err := service.edgeStackManager.UpdateStacksStatus(stacks); err != nil {
 		log.Error().Err(err).Msg("an error occurred during stack management")
 
 		return err

@@ -2,6 +2,7 @@ package exec
 
 import (
 	"context"
+	"strings"
 
 	"github.com/docker/cli/cli/config/types"
 	"github.com/portainer/agent"
@@ -9,6 +10,8 @@ import (
 	libstack "github.com/portainer/portainer/pkg/libstack"
 	"github.com/portainer/portainer/pkg/libstack/compose"
 )
+
+var _ agent.Deployer = &DockerComposeStackService{}
 
 // DockerComposeStackService represents a service for managing stacks by using the Docker binary.
 type DockerComposeStackService struct {
@@ -33,6 +36,7 @@ func (service *DockerComposeStackService) Deploy(ctx context.Context, name strin
 			Registries:  registryCredsToAuthConfigs(options.Registries),
 		},
 		RemoveOrphans: options.Prune,
+		EdgeStackID:   options.EdgeStackID,
 	})
 }
 
@@ -67,6 +71,24 @@ func (service *DockerComposeStackService) Validate(ctx context.Context, name str
 
 func (service *DockerComposeStackService) WaitForStatus(ctx context.Context, name string, status libstack.Status, _ agent.CheckStatusOptions) <-chan libstack.WaitResult {
 	return service.deployer.WaitForStatus(ctx, name, status)
+}
+
+func (service *DockerComposeStackService) GetEdgeStacks(ctx context.Context) ([]agent.EdgeStack, error) {
+	var r []agent.EdgeStack
+
+	edgeStacks, err := service.deployer.GetExistingEdgeStacks(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, s := range edgeStacks {
+		// Remove the prefix because it will get added back by the stack manager
+		s.Name = strings.TrimPrefix(s.Name, "edge_")
+
+		r = append(r, agent.EdgeStack(s))
+	}
+
+	return r, nil
 }
 
 func registryCredsToAuthConfigs(registryCreds []edge.RegistryCredentials) []types.AuthConfig {

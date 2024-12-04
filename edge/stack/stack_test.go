@@ -139,6 +139,7 @@ func TestStackManager_deployStack(t *testing.T) {
 
 		mockPortainerClient.EXPECT().SetEdgeStackStatus(stack.ID, portainer.EdgeStackStatusDeploying, stack.RollbackTo, "").Return(nil)
 		mockDeployer.EXPECT().Deploy(ctx, stackName, []string{stackFileLocation}, agent.DeployOptions{
+			EdgeStackID: portainer.EdgeStackID(stack.ID),
 			DeployerBaseOptions: agent.DeployerBaseOptions{
 				Namespace:  stack.Namespace,
 				WorkingDir: stack.FileFolder,
@@ -175,6 +176,7 @@ func TestStackManager_deployStack(t *testing.T) {
 
 		mockPortainerClient.EXPECT().SetEdgeStackStatus(stack.ID, portainer.EdgeStackStatusDeploying, stack.RollbackTo, "").Return(nil)
 		mockDeployer.EXPECT().Deploy(ctx, stackName, []string{stackFileLocation}, agent.DeployOptions{
+			EdgeStackID: portainer.EdgeStackID(stack.ID),
 			DeployerBaseOptions: agent.DeployerBaseOptions{
 				Namespace:  stack.Namespace,
 				WorkingDir: stack.FileFolder,
@@ -210,6 +212,7 @@ func TestStackManager_deployStack(t *testing.T) {
 
 		mockPortainerClient.EXPECT().SetEdgeStackStatus(stack.ID, portainer.EdgeStackStatusDeploying, stack.RollbackTo, "").Return(nil)
 		mockDeployer.EXPECT().Deploy(ctx, stackName, []string{stackFileLocation}, agent.DeployOptions{
+			EdgeStackID: portainer.EdgeStackID(stack.ID),
 			DeployerBaseOptions: agent.DeployerBaseOptions{
 				Namespace:  stack.Namespace,
 				WorkingDir: stack.FileFolder,

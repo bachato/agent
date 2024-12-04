@@ -547,6 +547,7 @@ func (manager *StackManager) deployStack(ctx context.Context, stack *edgeStack, 
 				Env:        envVars,
 				Registries: manager.ensureRegCreds(stack),
 			},
+			EdgeStackID: portainer.EdgeStackID(stack.ID),
 		},
 	)
 	manager.mu.Lock()
