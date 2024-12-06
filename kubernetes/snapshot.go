@@ -3,18 +3,14 @@ package kubernetes
 import (
 	"context"
 	"fmt"
-	"time"
 
 	portainer "github.com/portainer/portainer/api"
-
-	"github.com/rs/zerolog/log"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
+	"github.com/portainer/portainer/pkg/snapshot"
 )
 
 // CreateSnapshot creates a snapshot of a specific Kubernetes environment(endpoint)
-func CreateSnapshot() (*portainer.KubernetesSnapshot, error) {
-	cli, err := buildLocalClient()
+func CreateSnapshot(edgeKey string) (*portainer.KubernetesSnapshot, error) {
+	cli, err := BuildLocalClient()
 	if err != nil {
 		return nil, fmt.Errorf("unable to create Kubernetes client. Error: %w", err)
 	}
@@ -24,46 +20,16 @@ func CreateSnapshot() (*portainer.KubernetesSnapshot, error) {
 		return nil, fmt.Errorf("failed to ping /healthz endpoint. Error: %w", res.Error())
 	}
 
-	snapshot := &portainer.KubernetesSnapshot{}
-
-	err = snapshotVersion(snapshot, cli)
+	kubernetesSnapshot, err := snapshot.CreateKubernetesSnapshot(cli)
 	if err != nil {
-		log.Warn().Err(err).Msg("unable to snapshot cluster version")
+		return nil, fmt.Errorf("unable to create Kubernetes snapshot. Error: %w", err)
 	}
 
-	err = snapshotNodes(snapshot, cli)
+	diagnosticsData, err := snapshot.KubernetesSnapshotDiagnostics(cli, edgeKey)
 	if err != nil {
-		log.Warn().Err(err).Msg("unable to snapshot cluster nodes")
+		return nil, fmt.Errorf("unable to create Kubernetes snapshot diagnostics. Error: %w", err)
 	}
+	kubernetesSnapshot.DiagnosticsData = diagnosticsData
 
-	snapshot.Time = time.Now().Unix()
-	return snapshot, nil
-}
-
-func snapshotVersion(snapshot *portainer.KubernetesSnapshot, cli *kubernetes.Clientset) error {
-	versionInfo, err := cli.ServerVersion()
-	if err != nil {
-		return err
-	}
-
-	snapshot.KubernetesVersion = versionInfo.GitVersion
-	return nil
-}
-
-func snapshotNodes(snapshot *portainer.KubernetesSnapshot, cli *kubernetes.Clientset) error {
-	nodeList, err := cli.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
-	if err != nil {
-		return err
-	}
-
-	var totalCPUs, totalMemory int64
-	for _, node := range nodeList.Items {
-		totalCPUs += node.Status.Capacity.Cpu().Value()
-		totalMemory += node.Status.Capacity.Memory().Value()
-	}
-
-	snapshot.TotalCPU = totalCPUs
-	snapshot.TotalMemory = totalMemory
-	snapshot.NodeCount = len(nodeList.Items)
-	return nil
+	return kubernetesSnapshot, nil
 }

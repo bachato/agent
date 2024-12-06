@@ -25,7 +25,7 @@ type KubeClient struct {
 func NewKubeClient() (*KubeClient, error) {
 	kubeCli := &KubeClient{}
 
-	cli, err := buildLocalClient()
+	cli, err := BuildLocalClient()
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +34,7 @@ func NewKubeClient() (*KubeClient, error) {
 	return kubeCli, nil
 }
 
-func buildLocalClient() (*kubernetes.Clientset, error) {
+func BuildLocalClient() (*kubernetes.Clientset, error) {
 	config, err := rest.InClusterConfig()
 	if err != nil {
 		return nil, err

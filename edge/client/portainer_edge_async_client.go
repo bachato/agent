@@ -31,6 +31,7 @@ type PortainerAsyncClient struct {
 	setEndpointIDFn         setEndpointIDFn
 	getEndpointIDFn         getEndpointIDFn
 	edgeID                  string
+	edgeKey                 string
 	agentPlatformIdentifier agent.ContainerPlatform
 	commandTimestamp        *time.Time
 	metaFields              agent.EdgeMetaFields
@@ -45,13 +46,14 @@ type PortainerAsyncClient struct {
 }
 
 // NewPortainerAsyncClient returns a pointer to a new PortainerAsyncClient instance
-func NewPortainerAsyncClient(serverAddress string, setEIDFn setEndpointIDFn, getEIDFn getEndpointIDFn, edgeID string, containerPlatform agent.ContainerPlatform, metaFields agent.EdgeMetaFields, httpClient *edgeHTTPClient) *PortainerAsyncClient {
+func NewPortainerAsyncClient(serverAddress string, setEIDFn setEndpointIDFn, getEIDFn getEndpointIDFn, edgeID string, edgeKey string, containerPlatform agent.ContainerPlatform, metaFields agent.EdgeMetaFields, httpClient *edgeHTTPClient) *PortainerAsyncClient {
 	initialCommandTimestamp := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 	return &PortainerAsyncClient{
 		serverAddress:           serverAddress,
 		setEndpointIDFn:         setEIDFn,
 		getEndpointIDFn:         getEIDFn,
 		edgeID:                  edgeID,
+		edgeKey:                 edgeKey,
 		httpClient:              httpClient,
 		agentPlatformIdentifier: containerPlatform,
 		commandTimestamp:        &initialCommandTimestamp,
@@ -184,10 +186,9 @@ func (client *PortainerAsyncClient) GetEnvironmentStatus(flags ...string) (*Poll
 	var currentSnapshot snapshot
 	if doSnapshot {
 		payload.Snapshot = &snapshot{}
-
 		switch client.agentPlatformIdentifier {
 		case agent.PlatformDocker:
-			dockerSnapshot, err := docker.CreateSnapshot()
+			dockerSnapshot, err := docker.CreateSnapshot(client.edgeKey)
 			if err != nil {
 				log.Warn().Err(err).Msg("could not create the Docker snapshot")
 			}
@@ -259,7 +260,7 @@ func (client *PortainerAsyncClient) GetEnvironmentStatus(flags ...string) (*Poll
 			}
 
 		case agent.PlatformKubernetes:
-			kubeSnapshot, err := kubernetes.CreateSnapshot()
+			kubeSnapshot, err := kubernetes.CreateSnapshot(client.edgeKey)
 			if err != nil {
 				log.Warn().Err(err).Msg("could not create the Kubernetes snapshot")
 			}

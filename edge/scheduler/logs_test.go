@@ -14,6 +14,7 @@ func TestDataRace(t *testing.T) {
 		func(portainer.EndpointID) {},
 		func() portainer.EndpointID { return 1 },
 		"edgeID",
+		"edgeKey",
 		false,
 		agent.PlatformDocker,
 		agent.EdgeMetaFields{},

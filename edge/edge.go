@@ -104,6 +104,7 @@ func (manager *Manager) Start() error {
 		manager.SetEndpointID,
 		manager.GetEndpointID,
 		manager.agentOptions.EdgeID,
+		manager.agentOptions.EdgeKey,
 		manager.agentOptions.EdgeAsyncMode,
 		agentPlatform,
 		manager.agentOptions.EdgeMetaFields,

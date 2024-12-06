@@ -11,6 +11,7 @@ import (
 	"github.com/portainer/agent/exec"
 	httpagenthandler "github.com/portainer/agent/http/handler/agent"
 	"github.com/portainer/agent/http/handler/browse"
+	"github.com/portainer/agent/http/handler/diagnostics"
 	"github.com/portainer/agent/http/handler/docker"
 	"github.com/portainer/agent/http/handler/dockerhub"
 	"github.com/portainer/agent/http/handler/host"
@@ -38,6 +39,7 @@ type Handler struct {
 	webSocketHandler       *websocket.Handler
 	hostHandler            *host.Handler
 	pingHandler            *ping.Handler
+	diagnosticsHandler     *diagnostics.Handler
 	containerPlatform      agent.ContainerPlatform
 }
 
@@ -68,6 +70,7 @@ func NewHandler(config *Config) *Handler {
 		browseHandlerV1:        browse.NewHandlerV1(agentProxy, notaryService),
 		dockerProxyHandler:     docker.NewHandler(config.ClusterService, config.RuntimeConfiguration, notaryService, config.UseTLS),
 		dockerhubHandler:       dockerhub.NewHandler(notaryService),
+		diagnosticsHandler:     diagnostics.NewHandler(config.ContainerPlatform, config.EdgeManager, notaryService),
 		keyHandler:             key.NewHandler(notaryService, config.EdgeManager),
 		kubernetesHandler:      kubernetes.NewHandler(notaryService, config.KubernetesDeployer),
 		kubernetesProxyHandler: kubernetesproxy.NewHandler(notaryService),
@@ -103,6 +106,8 @@ func (h *Handler) ServeHTTP(rw http.ResponseWriter, request *http.Request) {
 		h.ServeHTTPV2(rw, request)
 	case strings.HasPrefix(request.URL.Path, "/ping"):
 		h.pingHandler.ServeHTTP(rw, request)
+	case strings.HasPrefix(request.URL.Path, "/diagnostics"):
+		h.diagnosticsHandler.ServeHTTP(rw, request)
 	case strings.HasPrefix(request.URL.Path, "/agents"):
 		h.agentHandler.ServeHTTP(rw, request)
 	case strings.HasPrefix(request.URL.Path, "/host"):
