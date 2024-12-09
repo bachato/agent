@@ -12,8 +12,8 @@ import (
 
 	"github.com/portainer/agent"
 
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/image"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 )
@@ -91,9 +91,9 @@ func getUnpackerImage() string {
 }
 
 func pullUnpackerImage() error {
-	image := getUnpackerImage()
+	unpackerImg := getUnpackerImage()
 
-	reader, err := ImagePull(image, types.ImagePullOptions{})
+	reader, err := ImagePull(unpackerImg, image.PullOptions{})
 	if err != nil {
 		return errors.Wrap(err, "unable to pull unpacker image")
 	}

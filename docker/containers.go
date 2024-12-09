@@ -5,8 +5,8 @@ import (
 	"io"
 	"time"
 
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -14,7 +14,7 @@ import (
 
 const largeClientTimeout = 1 * time.Hour
 
-func ImagePull(refStr string, options types.ImagePullOptions) (io.ReadCloser, error) {
+func ImagePull(refStr string, options image.PullOptions) (io.ReadCloser, error) {
 	var err error
 	var reader io.ReadCloser
 
