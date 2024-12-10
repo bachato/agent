@@ -35,7 +35,7 @@ func (h *Handler) getKubernetesDiagnostics(rw http.ResponseWriter) *httperror.Ha
 	}
 
 	edgeKey := ""
-	if h.edgeManager != nil {
+	if h.edgeManager != nil && h.edgeManager.GetKey() != "" {
 		edgeKey = h.edgeManager.GetKey()
 	}
 
@@ -55,7 +55,7 @@ func (h *Handler) getDockerDiagnostics(rw http.ResponseWriter) *httperror.Handle
 	}
 
 	edgeKey := ""
-	if h.edgeManager != nil {
+	if h.edgeManager != nil && h.edgeManager.GetKey() != "" {
 		edgeKey = h.edgeManager.GetKey()
 	}
 
