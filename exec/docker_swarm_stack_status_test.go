@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/portainer/agent"
+	"github.com/portainer/agent/deployer"
 	libstack "github.com/portainer/portainer/pkg/libstack"
 )
 
@@ -63,7 +63,7 @@ services:
 				t.Fatalf("[test: %s] Failed to write compose file: %v", testCase.TestName, err)
 			}
 
-			err = w.Deploy(ctx, projectName, []string{composeFilePath}, agent.DeployOptions{})
+			err = w.Deploy(ctx, projectName, []string{composeFilePath}, deployer.DeployOptions{})
 			if err != nil {
 				t.Fatalf("[test: %s] [path: %s] Failed to deploy compose file: %v", testCase.TestName, composeFilePath, err)
 			}
@@ -81,7 +81,7 @@ services:
 				t.Fatalf("[test: %s] Expected status message but got empty", testCase.TestName)
 			}
 
-			err = w.Remove(ctx, projectName, nil, agent.RemoveOptions{})
+			err = w.Remove(ctx, projectName, nil, deployer.RemoveOptions{})
 			if err != nil {
 				t.Fatalf("[test: %s] Failed to remove compose project: %v", testCase.TestName, err)
 			}
@@ -102,11 +102,11 @@ services:
 	}
 }
 
-func waitForStatus(deployer *DockerSwarmStackService, ctx context.Context, stackName string, requiredStatus libstack.Status) (libstack.Status, string, error) {
+func waitForStatus(service *DockerSwarmStackService, ctx context.Context, stackName string, requiredStatus libstack.Status) (libstack.Status, string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 1*time.Minute)
 	defer cancel()
 
-	statusCh := deployer.WaitForStatus(ctx, stackName, requiredStatus, agent.CheckStatusOptions{})
+	statusCh := service.WaitForStatus(ctx, stackName, requiredStatus, deployer.CheckStatusOptions{})
 	result := <-statusCh
 	if result.ErrorMsg == "" {
 		return requiredStatus, "", nil

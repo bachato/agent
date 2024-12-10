@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/portainer/agent"
+	"github.com/portainer/agent/deployer"
 	"github.com/portainer/agent/edge/client"
 	"github.com/portainer/agent/exec"
 	"github.com/portainer/agent/kubernetes"
@@ -33,7 +34,7 @@ type StackManager struct {
 	edgeID          string
 	stacks          map[edgeStackID]*edgeStack
 	stopSignal      chan struct{}
-	deployer        agent.Deployer
+	deployer        deployer.Deployer
 	isEnabled       bool
 	portainerClient client.PortainerClient
 	assetsPath      string
@@ -151,7 +152,7 @@ func (manager *StackManager) LoadExistingEdgeStacks(ctx context.Context) error {
 	return nil
 }
 
-func (manager *StackManager) buildDeployerService(assetsPath string, engineStatus engineType) (agent.Deployer, error) {
+func (manager *StackManager) buildDeployerService(assetsPath string, engineStatus engineType) (deployer.Deployer, error) {
 	switch engineStatus {
 	case EngineTypeDockerStandalone:
 		return exec.NewDockerComposeStackService(assetsPath), nil

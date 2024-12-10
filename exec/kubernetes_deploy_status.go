@@ -13,13 +13,13 @@ import (
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/kubernetes/scheme"
 
-	"github.com/portainer/agent"
+	"github.com/portainer/agent/deployer"
 	"github.com/portainer/agent/kubernetes"
 	libstack "github.com/portainer/portainer/pkg/libstack"
 	"github.com/rs/zerolog/log"
 )
 
-func (service *KubernetesDeployer) WaitForStatus(ctx context.Context, name string, requiredStatus libstack.Status, options agent.CheckStatusOptions) <-chan libstack.WaitResult {
+func (service *KubernetesDeployer) WaitForStatus(ctx context.Context, name string, requiredStatus libstack.Status, options deployer.CheckStatusOptions) <-chan libstack.WaitResult {
 	waitResultCh := make(chan libstack.WaitResult)
 
 	go func() {
@@ -68,7 +68,7 @@ func (service *KubernetesDeployer) WaitForStatus(ctx context.Context, name strin
 	return waitResultCh
 }
 
-func (service *KubernetesDeployer) getStatusForYAML(requiredStatus libstack.Status, options agent.CheckStatusOptions) (libstack.Status, string, error) {
+func (service *KubernetesDeployer) getStatusForYAML(requiredStatus libstack.Status, options deployer.CheckStatusOptions) (libstack.Status, string, error) {
 	// open the YAML file
 	file, err := os.Open(options.StackFileLocation)
 	if err != nil {

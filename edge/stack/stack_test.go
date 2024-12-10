@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/portainer/agent"
+	"github.com/portainer/agent/deployer"
 	"github.com/portainer/agent/internals/mocks"
 	portainer "github.com/portainer/portainer/api"
 	"github.com/portainer/portainer/api/edge"
@@ -40,8 +40,8 @@ func TestStackManager_pullImages(t *testing.T) {
 		stackName := "my-stack"
 		stackFileLocation := "/path/to/stack/stack.yml"
 
-		mockDeployer.EXPECT().Pull(ctx, stackName, []string{stackFileLocation}, agent.PullOptions{
-			DeployerBaseOptions: agent.DeployerBaseOptions{
+		mockDeployer.EXPECT().Pull(ctx, stackName, []string{stackFileLocation}, deployer.PullOptions{
+			DeployerBaseOptions: deployer.DeployerBaseOptions{
 				WorkingDir: stack.FileFolder,
 				Env:        buildEnvVarsForDeployer(stack.EnvVars),
 			},
@@ -70,8 +70,8 @@ func TestStackManager_pullImages(t *testing.T) {
 		stackName := "my-stack"
 		stackFileLocation := "/path/to/stack/stack.yml"
 
-		mockDeployer.EXPECT().Pull(ctx, stackName, []string{stackFileLocation}, agent.PullOptions{
-			DeployerBaseOptions: agent.DeployerBaseOptions{
+		mockDeployer.EXPECT().Pull(ctx, stackName, []string{stackFileLocation}, deployer.PullOptions{
+			DeployerBaseOptions: deployer.DeployerBaseOptions{
 				WorkingDir: stack.FileFolder,
 				Env:        buildEnvVarsForDeployer(stack.EnvVars),
 			},
@@ -138,9 +138,9 @@ func TestStackManager_deployStack(t *testing.T) {
 		stackFileLocation := "/path/to/stack/stack.yml"
 
 		mockPortainerClient.EXPECT().SetEdgeStackStatus(stack.ID, portainer.EdgeStackStatusDeploying, stack.RollbackTo, "").Return(nil)
-		mockDeployer.EXPECT().Deploy(ctx, stackName, []string{stackFileLocation}, agent.DeployOptions{
+		mockDeployer.EXPECT().Deploy(ctx, stackName, []string{stackFileLocation}, deployer.DeployOptions{
 			EdgeStackID: portainer.EdgeStackID(stack.ID),
-			DeployerBaseOptions: agent.DeployerBaseOptions{
+			DeployerBaseOptions: deployer.DeployerBaseOptions{
 				Namespace:  stack.Namespace,
 				WorkingDir: stack.FileFolder,
 				Env:        buildEnvVarsForDeployer(stack.EnvVars),
@@ -175,9 +175,9 @@ func TestStackManager_deployStack(t *testing.T) {
 		stackFileLocation := "/path/to/stack/stack.yml"
 
 		mockPortainerClient.EXPECT().SetEdgeStackStatus(stack.ID, portainer.EdgeStackStatusDeploying, stack.RollbackTo, "").Return(nil)
-		mockDeployer.EXPECT().Deploy(ctx, stackName, []string{stackFileLocation}, agent.DeployOptions{
+		mockDeployer.EXPECT().Deploy(ctx, stackName, []string{stackFileLocation}, deployer.DeployOptions{
 			EdgeStackID: portainer.EdgeStackID(stack.ID),
-			DeployerBaseOptions: agent.DeployerBaseOptions{
+			DeployerBaseOptions: deployer.DeployerBaseOptions{
 				Namespace:  stack.Namespace,
 				WorkingDir: stack.FileFolder,
 				Env:        buildEnvVarsForDeployer(stack.EnvVars),
@@ -211,9 +211,9 @@ func TestStackManager_deployStack(t *testing.T) {
 		stackFileLocation := "/path/to/stack/stack.yml"
 
 		mockPortainerClient.EXPECT().SetEdgeStackStatus(stack.ID, portainer.EdgeStackStatusDeploying, stack.RollbackTo, "").Return(nil)
-		mockDeployer.EXPECT().Deploy(ctx, stackName, []string{stackFileLocation}, agent.DeployOptions{
+		mockDeployer.EXPECT().Deploy(ctx, stackName, []string{stackFileLocation}, deployer.DeployOptions{
 			EdgeStackID: portainer.EdgeStackID(stack.ID),
-			DeployerBaseOptions: agent.DeployerBaseOptions{
+			DeployerBaseOptions: deployer.DeployerBaseOptions{
 				Namespace:  stack.Namespace,
 				WorkingDir: stack.FileFolder,
 				Env:        buildEnvVarsForDeployer(stack.EnvVars),

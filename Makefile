@@ -62,8 +62,9 @@ clean: ## Remove all build and download artifacts
 
 mock: ## Regenerate the internals/mocks/* files | DL = go install go.uber.org/mock/mockgen@latest
 	@go install go.uber.org/mock/mockgen@latest
-	mockgen -source=./agent.go -destination=./internals/mocks/mock_agent.go -package mocks
-	mockgen -source=./edge/client/interface.go -destination=./internals/mocks/mock_edge.go -package mocks
+	mockgen -package mocks -source=./agent.go -destination=./internals/mocks/mock_agent.go
+	mockgen -package mocks -source=./edge/client/interface.go -destination=./internals/mocks/mock_edge.go
+	mockgen -package mocks -source=./deployer/interface.go -destination=./internals/mocks/mock_deployer.go
 
 ##@ Helpers
 

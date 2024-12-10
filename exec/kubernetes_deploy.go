@@ -9,10 +9,11 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/portainer/agent"
+	"github.com/portainer/agent/deployer"
 	"github.com/portainer/agent/kubernetes"
 )
 
-var _ agent.Deployer = &KubernetesDeployer{}
+var _ deployer.Deployer = &KubernetesDeployer{}
 
 // KubernetesDeployer represents a service to deploy resources inside a Kubernetes environment.
 type KubernetesDeployer struct {
@@ -56,22 +57,22 @@ func (deployer *KubernetesDeployer) operation(_ context.Context, _ string, fileP
 // Deploy will deploy a Kubernetes manifest inside the default namespace
 // it will use kubectl to deploy the manifest.
 // kubectl uses in-cluster config.
-func (deployer *KubernetesDeployer) Deploy(ctx context.Context, name string, filePaths []string, options agent.DeployOptions) error {
+func (deployer *KubernetesDeployer) Deploy(ctx context.Context, name string, filePaths []string, options deployer.DeployOptions) error {
 	return deployer.operation(ctx, name, filePaths, "apply", options.Namespace)
 }
 
-func (deployer *KubernetesDeployer) Remove(ctx context.Context, name string, filePaths []string, options agent.RemoveOptions) error {
+func (deployer *KubernetesDeployer) Remove(ctx context.Context, name string, filePaths []string, options deployer.RemoveOptions) error {
 	return deployer.operation(ctx, name, filePaths, "delete", options.Namespace)
 }
 
 // Pull is a dummy method for Kube
-func (deployer *KubernetesDeployer) Pull(ctx context.Context, name string, filePaths []string, options agent.PullOptions) error {
+func (deployer *KubernetesDeployer) Pull(ctx context.Context, name string, filePaths []string, options deployer.PullOptions) error {
 	return nil
 }
 
 // Validate is a dummy method for Kubernetes manifest validation
 // https://portainer.atlassian.net/browse/EE-6292?focusedCommentId=29674
-func (deployer *KubernetesDeployer) Validate(ctx context.Context, name string, filePaths []string, options agent.ValidateOptions) error {
+func (deployer *KubernetesDeployer) Validate(ctx context.Context, name string, filePaths []string, options deployer.ValidateOptions) error {
 	return nil
 }
 

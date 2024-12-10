@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/portainer/agent"
+	"github.com/portainer/agent/deployer"
 	"github.com/portainer/agent/docker"
 	"github.com/portainer/agent/edge/aws"
 	"github.com/portainer/agent/edge/client"
@@ -130,6 +131,7 @@ func (manager *StackManager) processStack(stackID int, stackStatus client.StackS
 	stack.RegistryCredentials = stackPayload.RegistryCredentials
 	stack.Namespace = stackPayload.Namespace
 	stack.PrePullImage = stackPayload.PrePullImage
+	stack.DeployerOptionsPayload.Prune = stackPayload.DeployerOptionsPayload.Prune
 	stack.RePullImage = stackPayload.RePullImage
 	stack.RetryDeploy = stackPayload.RetryDeploy
 	stack.RetryPeriod = stackPayload.RetryPeriod
@@ -205,9 +207,9 @@ func (manager *StackManager) performActionOnStack() {
 
 	switch stack.Status {
 	case StatusAwaitingDeployedStatus, StatusAwaitingRemovedStatus, StatusDeployed:
-		if err := manager.checkStackStatus(ctx, stackName, stack, agent.CheckStatusOptions{
+		if err := manager.checkStackStatus(ctx, stackName, stack, deployer.CheckStatusOptions{
 			StackFileLocation: stackFileLocation,
-			DeployerBaseOptions: agent.DeployerBaseOptions{
+			DeployerBaseOptions: deployer.DeployerBaseOptions{
 				Namespace: stack.Namespace,
 			},
 		}); err != nil {
@@ -305,7 +307,7 @@ func (manager *StackManager) nextPendingStack() *edgeStack {
 
 // check the status of running workloads for stack when stack.Status is
 // one of StatusAwaitingDeployedStatus | StatusAwaitingRemovedStatus | StatusDeployed
-func (manager *StackManager) checkStackStatus(ctx context.Context, stackName string, stack *edgeStack, options agent.CheckStatusOptions) error {
+func (manager *StackManager) checkStackStatus(ctx context.Context, stackName string, stack *edgeStack, options deployer.CheckStatusOptions) error {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 
@@ -385,7 +387,7 @@ func (manager *StackManager) checkStackStatus(ctx context.Context, stackName str
 	return nil
 }
 
-func (manager *StackManager) waitForStatus(ctx context.Context, stackName string, requiredStatus libstack.Status, options agent.CheckStatusOptions) (libstack.Status, string, error) {
+func (manager *StackManager) waitForStatus(ctx context.Context, stackName string, requiredStatus libstack.Status, options deployer.CheckStatusOptions) (libstack.Status, string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 1*time.Minute)
 	defer cancel()
 
@@ -412,8 +414,8 @@ func (manager *StackManager) validateStackFile(ctx context.Context, stack *edgeS
 	envVars := buildEnvVarsForDeployer(stack.EnvVars)
 
 	err := manager.deployer.Validate(ctx, stackName, []string{stackFileLocation},
-		agent.ValidateOptions{
-			DeployerBaseOptions: agent.DeployerBaseOptions{
+		deployer.ValidateOptions{
+			DeployerBaseOptions: deployer.DeployerBaseOptions{
 				Namespace:  stack.Namespace,
 				WorkingDir: stack.FileFolder,
 				Env:        envVars,
@@ -456,8 +458,8 @@ func (manager *StackManager) pullImages(ctx context.Context, stack *edgeStack, s
 
 	// Unlock so GetEdgeRegistryCredentials() can acquire the lock if called
 	manager.mu.Unlock()
-	err := manager.deployer.Pull(ctx, stackName, []string{stackFileLocation}, agent.PullOptions{
-		DeployerBaseOptions: agent.DeployerBaseOptions{
+	err := manager.deployer.Pull(ctx, stackName, []string{stackFileLocation}, deployer.PullOptions{
+		DeployerBaseOptions: deployer.DeployerBaseOptions{
 			WorkingDir: stack.FileFolder,
 			Env:        envVars,
 			Registries: manager.ensureRegCreds(stack),
@@ -540,14 +542,15 @@ func (manager *StackManager) deployStack(ctx context.Context, stack *edgeStack, 
 	// Unlock so GetEdgeRegistryCredentials() can acquire the lock if called
 	manager.mu.Unlock()
 	err := manager.deployer.Deploy(ctx, stackName, []string{stackFileLocation},
-		agent.DeployOptions{
-			DeployerBaseOptions: agent.DeployerBaseOptions{
+		deployer.DeployOptions{
+			DeployerBaseOptions: deployer.DeployerBaseOptions{
 				Namespace:  stack.Namespace,
 				WorkingDir: stack.FileFolder,
 				Env:        envVars,
 				Registries: manager.ensureRegCreds(stack),
 			},
 			EdgeStackID: portainer.EdgeStackID(stack.ID),
+			Prune:       stack.DeployerOptionsPayload.Prune,
 		},
 	)
 	manager.mu.Lock()
@@ -649,8 +652,8 @@ func (manager *StackManager) deleteStack(ctx context.Context, stack *edgeStack, 
 		ctx,
 		stackName,
 		[]string{stackFileLocation},
-		agent.RemoveOptions{
-			DeployerBaseOptions: agent.DeployerBaseOptions{
+		deployer.RemoveOptions{
+			DeployerBaseOptions: deployer.DeployerBaseOptions{
 				Namespace:  stack.Namespace,
 				WorkingDir: successFileFolder,
 				Env:        buildEnvVarsForDeployer(stack.EnvVars),

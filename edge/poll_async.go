@@ -222,7 +222,7 @@ func (service *PollService) processAsyncCommands(commands []client.AsyncCommand)
 
 		switch command.Type {
 		case "edgeStack":
-			err = service.processStackCommand(ctx, command)
+			err = service.processEdgeStackCommand(ctx, command)
 		case "edgeJob":
 			err = service.processScheduleCommand(command)
 		case "edgeLog":
@@ -254,7 +254,7 @@ func (service *PollService) processAsyncCommands(commands []client.AsyncCommand)
 	}
 }
 
-func (service *PollService) processStackCommand(ctx context.Context, command client.AsyncCommand) error {
+func (service *PollService) processEdgeStackCommand(ctx context.Context, command client.AsyncCommand) error {
 	var stackData edge.StackPayload
 	err := mapstructure.Decode(command.Value, &stackData)
 	if err != nil {

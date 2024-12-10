@@ -7,11 +7,12 @@ import (
 	"runtime"
 
 	"github.com/portainer/agent"
+	"github.com/portainer/agent/deployer"
 	libstack "github.com/portainer/portainer/pkg/libstack"
 	"github.com/portainer/portainer/pkg/libstack/compose"
 )
 
-var _ agent.Deployer = &DockerSwarmStackService{}
+var _ deployer.Deployer = &DockerSwarmStackService{}
 
 // DockerSwarmStackService represents a service for managing stacks by using the Docker binary.
 type DockerSwarmStackService struct {
@@ -39,19 +40,18 @@ func NewDockerSwarmStackService(binaryPath string) *DockerSwarmStackService {
 }
 
 // Deploy executes the docker stack deploy command.
-func (service *DockerSwarmStackService) Deploy(ctx context.Context, name string, filePaths []string, options agent.DeployOptions) error {
+func (service *DockerSwarmStackService) Deploy(ctx context.Context, name string, filePaths []string, options deployer.DeployOptions) error {
 	if len(filePaths) == 0 {
 		return errors.New("missing file paths")
 	}
 
 	stackFilePath := filePaths[0]
 
-	args := []string{}
+	args := []string{"stack", "deploy", "--with-registry-auth"}
 	if options.Prune {
-		args = append(args, "stack", "deploy", "--prune", "--with-registry-auth", "--compose-file", stackFilePath, name)
-	} else {
-		args = append(args, "stack", "deploy", "--with-registry-auth", "--compose-file", stackFilePath, name)
+		args = append(args, "--prune")
 	}
+	args = append(args, "--compose-file", stackFilePath, name)
 
 	stackFolder := options.WorkingDir
 	if stackFolder == "" {
@@ -68,12 +68,12 @@ func (service *DockerSwarmStackService) Deploy(ctx context.Context, name string,
 }
 
 // Pull is a dummy method for Swarm
-func (service *DockerSwarmStackService) Pull(ctx context.Context, name string, filePaths []string, options agent.PullOptions) error {
+func (service *DockerSwarmStackService) Pull(ctx context.Context, name string, filePaths []string, options deployer.PullOptions) error {
 	return nil
 }
 
 // Validate uses compose to validate the stack files
-func (service *DockerSwarmStackService) Validate(ctx context.Context, name string, filePaths []string, options agent.ValidateOptions) error {
+func (service *DockerSwarmStackService) Validate(ctx context.Context, name string, filePaths []string, options deployer.ValidateOptions) error {
 	return service.composeDeployer.Validate(ctx, filePaths, libstack.Options{
 		WorkingDir:  options.WorkingDir,
 		Env:         options.Env,
@@ -82,7 +82,7 @@ func (service *DockerSwarmStackService) Validate(ctx context.Context, name strin
 }
 
 // Remove executes the docker stack rm command.
-func (service *DockerSwarmStackService) Remove(ctx context.Context, name string, filePaths []string, options agent.RemoveOptions) error {
+func (service *DockerSwarmStackService) Remove(ctx context.Context, name string, filePaths []string, options deployer.RemoveOptions) error {
 	args := []string{"stack", "rm", name}
 
 	_, err := runCommandAndCaptureStdErr(service.command, args, &cmdOpts{

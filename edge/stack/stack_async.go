@@ -3,7 +3,7 @@ package stack
 import (
 	"context"
 
-	"github.com/portainer/agent"
+	"github.com/portainer/agent/deployer"
 	"github.com/portainer/portainer/api/edge"
 	"github.com/portainer/portainer/api/filesystem"
 	"github.com/rs/zerolog/log"
@@ -12,7 +12,7 @@ import (
 func (manager *StackManager) DeleteNormalStack(ctx context.Context, stackName string) error {
 	log.Debug().Str("stack_name", stackName).Msg("removing normal stack")
 
-	if err := manager.deployer.Remove(ctx, stackName, []string{}, agent.RemoveOptions{}); err != nil {
+	if err := manager.deployer.Remove(ctx, stackName, []string{}, deployer.RemoveOptions{}); err != nil {
 		log.Error().Err(err).Msg("unable to remove normal stack")
 
 		return err
@@ -91,6 +91,7 @@ func (manager *StackManager) buildDeployerParams(stackPayload edge.StackPayload,
 	stack.PullCount = 0
 	stack.PullFinished = false
 	stack.DeployCount = 0
+	stack.DeployerOptionsPayload.Prune = stackPayload.DeployerOptionsPayload.Prune
 
 	stack.SupportRelativePath = stackPayload.SupportRelativePath
 	stack.FilesystemPath = stackPayload.FilesystemPath
