@@ -94,7 +94,7 @@ func (deployer *KubernetesDeployer) DeployRawConfig(token, config string, namesp
 }
 
 func (service *KubernetesDeployer) GetEdgeStacks(ctx context.Context) ([]agent.EdgeStack, error) {
-	return nil, nil
+	return []agent.EdgeStack{}, nil
 }
 
 type argOptions struct {
