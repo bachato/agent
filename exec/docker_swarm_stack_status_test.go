@@ -106,8 +106,7 @@ func waitForStatus(service *DockerSwarmStackService, ctx context.Context, stackN
 	ctx, cancel := context.WithTimeout(ctx, 1*time.Minute)
 	defer cancel()
 
-	statusCh := service.WaitForStatus(ctx, stackName, requiredStatus, deployer.CheckStatusOptions{})
-	result := <-statusCh
+	result := service.WaitForStatus(ctx, stackName, requiredStatus, deployer.CheckStatusOptions{})
 	if result.ErrorMsg == "" {
 		return requiredStatus, "", nil
 	}

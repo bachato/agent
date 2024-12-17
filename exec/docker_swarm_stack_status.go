@@ -15,92 +15,79 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func (service *DockerSwarmStackService) WaitForStatus(ctx context.Context, name string, status libstack.Status, _ deployer.CheckStatusOptions) <-chan libstack.WaitResult {
-	waitResultCh := make(chan libstack.WaitResult)
-	waitResult := libstack.WaitResult{
-		Status: status,
-	}
+func (service *DockerSwarmStackService) WaitForStatus(ctx context.Context, name string, status libstack.Status, _ deployer.CheckStatusOptions) libstack.WaitResult {
+	waitResult := libstack.WaitResult{Status: status}
 
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				waitResult.ErrorMsg = "failed to wait for status: " + ctx.Err().Error()
-				waitResultCh <- waitResult
-			default:
-			}
+	for {
+		if ctx.Err() != nil {
+			waitResult.ErrorMsg = "failed to wait for status: " + ctx.Err().Error()
 
-			time.Sleep(1 * time.Second)
+			return waitResult
+		}
 
-			cli, err := docker.NewClient()
-			if err != nil {
-				log.Warn().Err(err).Msg("failed to create Docker client")
+		time.Sleep(1 * time.Second)
 
-				continue
-			}
+		cli, err := docker.NewClient()
+		if err != nil {
+			log.Warn().Err(err).Msg("failed to create Docker client")
 
-			// Create a filter to match the services belonging to the stack
-			stackFilter := filters.NewArgs()
-			stackFilter.Add("label", "com.docker.stack.namespace="+name)
+			continue
+		}
 
-			// Retrieve the services of the stack
-			services, err := cli.ServiceList(ctx, types.ServiceListOptions{
-				Filters: stackFilter,
-			})
+		// Create a filter to match the services belonging to the stack
+		stackFilter := filters.NewArgs()
+		stackFilter.Add("label", "com.docker.stack.namespace="+name)
+
+		// Retrieve the services of the stack
+		services, err := cli.ServiceList(ctx, types.ServiceListOptions{
+			Filters: stackFilter,
+		})
+		if err != nil {
+			log.Warn().
+				Str("project_name", name).
+				Err(err).
+				Msg("failed to list Docker services")
+		}
+
+		if len(services) == 0 && status == libstack.StatusRemoved {
+			return waitResult
+		}
+
+		var serviceStatuses []libstack.Status
+
+		for _, service := range services {
+			serviceStatus, statusMessage, err := getServiceStatus(ctx, cli, service)
 			if err != nil {
 				log.Warn().
 					Str("project_name", name).
 					Err(err).
-					Msg("failed to list Docker services")
+					Msg("failed to get service status")
+
+				continue
 			}
 
-			if len(services) == 0 && status == libstack.StatusRemoved {
-				waitResultCh <- waitResult
+			if statusMessage != "" {
+				waitResult.ErrorMsg = statusMessage
 
-				return
+				return waitResult
 			}
 
-			var serviceStatuses []libstack.Status
-
-			for _, service := range services {
-				serviceStatus, statusMessage, err := getServiceStatus(ctx, cli, service)
-				if err != nil {
-					log.Warn().
-						Str("project_name", name).
-						Err(err).
-						Msg("failed to get service status")
-
-					continue
-				}
-
-				if statusMessage != "" {
-					waitResult.ErrorMsg = statusMessage
-					waitResultCh <- waitResult
-
-					return
-				}
-
-				serviceStatuses = append(serviceStatuses, serviceStatus)
-			}
-
-			// Aggregate the statuses of all services
-			aggregateStatus := aggregateStatus(serviceStatuses)
-
-			if aggregateStatus == status {
-				waitResultCh <- waitResult
-
-				return
-			}
-
-			log.Debug().
-				Str("project_name", name).
-				Str("required_status", string(status)).
-				Str("status", string(aggregateStatus)).
-				Msg("waiting for status")
+			serviceStatuses = append(serviceStatuses, serviceStatus)
 		}
-	}()
 
-	return waitResultCh
+		// Aggregate the statuses of all services
+		aggregateStatus := aggregateStatus(serviceStatuses)
+
+		if aggregateStatus == status {
+			return waitResult
+		}
+
+		log.Debug().
+			Str("project_name", name).
+			Str("required_status", string(status)).
+			Str("status", string(aggregateStatus)).
+			Msg("waiting for status")
+	}
 }
 
 func aggregateStatus(statuses []libstack.Status) libstack.Status {

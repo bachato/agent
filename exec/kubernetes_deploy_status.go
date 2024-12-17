@@ -19,53 +19,42 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func (service *KubernetesDeployer) WaitForStatus(ctx context.Context, name string, requiredStatus libstack.Status, options deployer.CheckStatusOptions) <-chan libstack.WaitResult {
-	waitResultCh := make(chan libstack.WaitResult)
-
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				waitResultCh <- libstack.WaitResult{Status: requiredStatus, ErrorMsg: "failed to wait for status: " + ctx.Err().Error()}
-			default:
-			}
-
-			time.Sleep(1 * time.Second)
-
-			status, workloadError, err := service.getStatusForYAML(requiredStatus, options)
-			if err != nil {
-				log.Warn().
-					Str("project_name", name).
-					Err(err).
-					Msg("failed to get workload status")
-				waitResultCh <- libstack.WaitResult{Status: requiredStatus, ErrorMsg: "failed to wait for status: " + err.Error()}
-				return
-			}
-
-			if status == requiredStatus {
-				waitResultCh <- libstack.WaitResult{Status: requiredStatus}
-				return
-			}
-
-			if status == libstack.StatusCompleted && requiredStatus == libstack.StatusRunning {
-				waitResultCh <- libstack.WaitResult{Status: status}
-				return
-			}
-
-			if workloadError != "" {
-				waitResultCh <- libstack.WaitResult{Status: requiredStatus, ErrorMsg: workloadError}
-				return
-			}
-
-			log.Debug().
-				Str("project_name", name).
-				Str("required_status", string(requiredStatus)).
-				Str("status", string(status)).
-				Msg("waiting for status")
+func (service *KubernetesDeployer) WaitForStatus(ctx context.Context, name string, requiredStatus libstack.Status, options deployer.CheckStatusOptions) libstack.WaitResult {
+	for {
+		if ctx.Err() != nil {
+			return libstack.WaitResult{Status: requiredStatus, ErrorMsg: "failed to wait for status: " + ctx.Err().Error()}
 		}
-	}()
 
-	return waitResultCh
+		time.Sleep(1 * time.Second)
+
+		status, workloadError, err := service.getStatusForYAML(requiredStatus, options)
+		if err != nil {
+			log.Warn().
+				Str("project_name", name).
+				Err(err).
+				Msg("failed to get workload status")
+
+			return libstack.WaitResult{Status: requiredStatus, ErrorMsg: "failed to wait for status: " + err.Error()}
+		}
+
+		if status == requiredStatus {
+			return libstack.WaitResult{Status: requiredStatus}
+		}
+
+		if status == libstack.StatusCompleted && requiredStatus == libstack.StatusRunning {
+			return libstack.WaitResult{Status: status}
+		}
+
+		if workloadError != "" {
+			return libstack.WaitResult{Status: requiredStatus, ErrorMsg: workloadError}
+		}
+
+		log.Debug().
+			Str("project_name", name).
+			Str("required_status", string(requiredStatus)).
+			Str("status", string(status)).
+			Msg("waiting for status")
+	}
 }
 
 func (service *KubernetesDeployer) getStatusForYAML(requiredStatus libstack.Status, options deployer.CheckStatusOptions) (libstack.Status, string, error) {

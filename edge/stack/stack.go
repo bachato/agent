@@ -391,10 +391,7 @@ func (manager *StackManager) waitForStatus(ctx context.Context, stackName string
 	ctx, cancel := context.WithTimeout(ctx, 1*time.Minute)
 	defer cancel()
 
-	statusCh := manager.deployer.WaitForStatus(ctx, stackName, requiredStatus, options)
-
-	result := <-statusCh
-
+	result := manager.deployer.WaitForStatus(ctx, stackName, requiredStatus, options)
 	if result.ErrorMsg == "" {
 		return result.Status, "", nil
 	}
