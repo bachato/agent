@@ -239,7 +239,9 @@ func (manager *StackManager) performActionOnStack() {
 			if err := docker.CopyGitStackToHost(stack.FileFolder, dst, stack.ID, stackName, manager.assetsPath); err != nil {
 				log.Error().Err(err).Msg("unable to copy the stack to host")
 
+				manager.mu.Lock()
 				stack.Status = StatusError
+				manager.mu.Unlock()
 
 				if err := manager.portainerClient.SetEdgeStackStatus(stack.ID, portainer.EdgeStackStatusError, stack.RollbackTo, fmt.Errorf("failed to copy git stack to host: %w", err).Error()); err != nil {
 					log.Error().Err(err).Msg("unable to update Edge stack status")
