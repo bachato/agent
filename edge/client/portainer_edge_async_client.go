@@ -2,12 +2,14 @@ package client
 
 import (
 	"bytes"
+	"cmp"
 	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/fnv"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"sync"
@@ -175,6 +177,7 @@ func (client *PortainerAsyncClient) GetEnvironmentStatus(flags ...string) (*Poll
 	payload.EndpointId = client.getEndpointIDFn()
 
 	var doSnapshot, doCommand bool
+
 	for _, f := range flags {
 		if f == "snapshot" {
 			doSnapshot = true
@@ -184,103 +187,16 @@ func (client *PortainerAsyncClient) GetEnvironmentStatus(flags ...string) (*Poll
 	}
 
 	var currentSnapshot snapshot
+
 	if doSnapshot {
 		payload.Snapshot = &snapshot{}
+
 		switch client.agentPlatformIdentifier {
 		case agent.PlatformDocker:
-			dockerSnapshot, err := docker.CreateSnapshot(client.edgeKey)
-			if err != nil {
-				log.Warn().Err(err).Msg("could not create the Docker snapshot")
-			}
-
-			optimizeDockerSnapshot(dockerSnapshot)
-
-			payload.Snapshot.Docker = dockerSnapshot
-			currentSnapshot.Docker = dockerSnapshot
-
-			if client.lastSnapshot.Docker != nil && !client.snapshotRetried {
-				h, ok := snapshotHash(client.lastSnapshot.Docker)
-				if ok {
-					dockerPatch, err := jsondiff.Compare(client.lastSnapshot.Docker, dockerSnapshot)
-					if err == nil {
-						payload.Snapshot.DockerPatch = dockerPatch
-						payload.Snapshot.DockerHash = &h
-						payload.Snapshot.Docker = nil
-					} else {
-						log.Warn().Err(err).Msg("could not generate the Docker snapshot patch")
-					}
-				}
-			}
-
-			for _, stack := range client.stackLogCollectionQueue {
-				cs, err := docker.GetContainersWithLabel("com.docker.compose.project=edge_" + stack.EdgeStackName)
-				if err != nil {
-					log.Warn().
-						Str("stack", stack.EdgeStackName).
-						Err(err).
-						Msg("could not retrieve containers for stack")
-
-					continue
-				}
-
-				cs2, err := docker.GetContainersWithLabel("com.docker.stack.namespace=edge_" + stack.EdgeStackName)
-				if err != nil {
-					log.Warn().Err(err).Msg("could not retrieve containers for stack")
-
-					continue
-				}
-
-				cs = append(cs, cs2...)
-
-				edgeStackLog := EdgeStackLog{
-					EdgeStackID: stack.EdgeStackID,
-				}
-
-				for _, c := range cs {
-					stdOut, stdErr, err := docker.GetContainerLogs(c.ID, strconv.Itoa(stack.Tail))
-					if err != nil {
-						log.Warn().
-							Str("container_id", c.ID).
-							Err(err).
-							Msg("could not retrieve logs for container")
-
-						continue
-					}
-
-					edgeStackLog.Logs = append(edgeStackLog.Logs, EndpointLog{
-						DockerContainerID: c.ID,
-						StdOut:            string(stdOut),
-						StdErr:            string(stdErr),
-					})
-				}
-
-				if len(edgeStackLog.Logs) > 0 {
-					payload.Snapshot.StackLogs = append(payload.Snapshot.StackLogs, edgeStackLog)
-				}
-			}
+			client.createDockerSnapshot(&payload, &currentSnapshot)
 
 		case agent.PlatformKubernetes:
-			kubeSnapshot, err := kubernetes.CreateSnapshot(client.edgeKey)
-			if err != nil {
-				log.Warn().Err(err).Msg("could not create the Kubernetes snapshot")
-			}
-
-			payload.Snapshot.Kubernetes = kubeSnapshot
-			currentSnapshot.Kubernetes = kubeSnapshot
-
-			if client.lastSnapshot.Kubernetes != nil && !client.snapshotRetried {
-				h, ok := snapshotHash(client.lastSnapshot.Kubernetes)
-				if ok {
-					kubePatch, err := jsondiff.Compare(client.lastSnapshot.Docker, kubeSnapshot)
-					if err == nil {
-						payload.Snapshot.KubernetesPatch = kubePatch
-						payload.Snapshot.KubernetesHash = &h
-						payload.Snapshot.KubernetesPatch = nil
-					} else {
-						log.Warn().Err(err).Msg("could not generate the Kubernetes snapshot patch")
-					}
-				}
-			}
+			client.createKubernetesSnapshot(&payload, &currentSnapshot)
 		}
 
 		client.nextSnapshotMutex.Lock()
@@ -307,32 +223,8 @@ func (client *PortainerAsyncClient) GetEnvironmentStatus(flags ...string) (*Poll
 		return nil, err
 	}
 
-	if doSnapshot && asyncResponse.NeedFullSnapshot && !client.snapshotRetried {
-		log.Debug().Msg("retrying with full snapshot")
-		client.snapshotRetried = true
-
-		_, err = client.GetEnvironmentStatus("snapshot")
-		if err != nil {
-			log.Error().Err(err).Msg("unable to resend the full snapshot")
-		}
-	} else if doSnapshot {
-		client.snapshotRetried = false
-
-		client.lastSnapshot.Docker = currentSnapshot.Docker
-		client.lastSnapshot.Kubernetes = currentSnapshot.Kubernetes
-
-		if client.lastSnapshot.StackStatusArray == nil {
-			client.lastSnapshot.StackStatusArray = make(map[portainer.EdgeStackID][]portainer.EdgeStackDeploymentStatus)
-		}
-
-		for k, v := range client.nextSnapshot.StackStatusArray {
-			client.lastSnapshot.StackStatusArray[k] = v
-		}
-
-		client.nextSnapshot.StackStatusArray = nil
-		client.nextSnapshot.JobsStatus = nil
-		client.nextSnapshot.EdgeConfigStates = nil
-		client.stackLogCollectionQueue = nil
+	if doSnapshot {
+		client.rotateSnapshots(currentSnapshot, asyncResponse)
 	}
 
 	client.setEndpointIDFn(asyncResponse.EndpointID)
@@ -514,6 +406,179 @@ func (client *PortainerAsyncClient) EnqueueLogCollectionForStack(logCmd LogComma
 	client.stackLogCollectionQueue = append(client.stackLogCollectionQueue, logCmd)
 }
 
+func (client *PortainerAsyncClient) createDockerSnapshot(payload *AsyncRequest, currentSnapshot *snapshot) {
+	dockerSnapshot, err := docker.CreateSnapshot(client.edgeKey)
+	if err != nil {
+		log.Warn().Err(err).Msg("could not create the Docker snapshot")
+
+		return
+	}
+
+	optimizeDockerSnapshot(dockerSnapshot)
+
+	payload.Snapshot.Docker = dockerSnapshot
+	currentSnapshot.Docker = dockerSnapshot
+
+	client.getEdgeStackLogs(payload)
+
+	if client.lastSnapshot.Docker == nil || client.snapshotRetried {
+		return
+	}
+
+	h, ok := snapshotHash(client.lastSnapshot.Docker)
+	if !ok {
+		return
+	}
+
+	dockerPatch, err := jsondiff.Compare(client.lastSnapshot.Docker, dockerSnapshot)
+	if err != nil {
+		log.Warn().Err(err).Msg("could not generate the Docker snapshot patch")
+
+		return
+	}
+
+	if !isDockerSnapshotDiffEmpty(payload.Snapshot.DockerPatch) {
+		currentSnapshot.Docker = nil
+
+		payload.Snapshot.DockerPatch = dockerPatch
+		payload.Snapshot.DockerHash = &h
+	}
+
+	payload.Snapshot.Docker = nil
+}
+
+// isDockerSnapshotDiffEmpty filters out diffs that only contain fields that
+// change all the time, so the server needs to process less of them
+func isDockerSnapshotDiffEmpty(dockerPatch jsondiff.Patch) bool {
+	noisyFields := []string{
+		"/DiagnosticsData/DNS/edge-to-portainer",
+		"/DiagnosticsData/Telnet/edge-to-portainer",
+		"/DockerSnapshotRaw/Info/NFd",
+		"/DockerSnapshotRaw/Info/NGoroutines",
+		"/DockerSnapshotRaw/Info/SystemTime",
+		"/Time",
+	}
+
+	for _, op := range dockerPatch {
+		if op.Type != "replace" || !slices.Contains(noisyFields, op.Path.String()) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (client *PortainerAsyncClient) createKubernetesSnapshot(payload *AsyncRequest, currentSnapshot *snapshot) {
+	kubeSnapshot, err := kubernetes.CreateSnapshot(client.edgeKey)
+	if err != nil {
+		log.Warn().Err(err).Msg("could not create the Kubernetes snapshot")
+
+		return
+	}
+
+	payload.Snapshot.Kubernetes = kubeSnapshot
+	currentSnapshot.Kubernetes = kubeSnapshot
+
+	if client.lastSnapshot.Kubernetes == nil || client.snapshotRetried {
+		return
+	}
+
+	h, ok := snapshotHash(client.lastSnapshot.Kubernetes)
+	if !ok {
+		return
+	}
+
+	kubePatch, err := jsondiff.Compare(client.lastSnapshot.Docker, kubeSnapshot)
+	if err != nil {
+		log.Warn().Err(err).Msg("could not generate the Kubernetes snapshot patch")
+
+		return
+	}
+
+	payload.Snapshot.KubernetesPatch = kubePatch
+	payload.Snapshot.KubernetesHash = &h
+	payload.Snapshot.KubernetesPatch = nil
+}
+
+func (client *PortainerAsyncClient) getEdgeStackLogs(payload *AsyncRequest) {
+	for _, stack := range client.stackLogCollectionQueue {
+		cs, err := docker.GetContainersWithLabel("com.docker.compose.project=edge_" + stack.EdgeStackName)
+		if err != nil {
+			log.Warn().
+				Str("stack", stack.EdgeStackName).
+				Err(err).
+				Msg("could not retrieve containers for stack")
+
+			continue
+		}
+
+		cs2, err := docker.GetContainersWithLabel("com.docker.stack.namespace=edge_" + stack.EdgeStackName)
+		if err != nil {
+			log.Warn().Err(err).Msg("could not retrieve containers for stack")
+
+			continue
+		}
+
+		cs = append(cs, cs2...)
+
+		edgeStackLog := EdgeStackLog{EdgeStackID: stack.EdgeStackID}
+
+		for _, c := range cs {
+			stdOut, stdErr, err := docker.GetContainerLogs(c.ID, strconv.Itoa(stack.Tail))
+			if err != nil {
+				log.Warn().
+					Str("container_id", c.ID).
+					Err(err).
+					Msg("could not retrieve logs for container")
+
+				continue
+			}
+
+			edgeStackLog.Logs = append(edgeStackLog.Logs, EndpointLog{
+				DockerContainerID: c.ID,
+				StdOut:            string(stdOut),
+				StdErr:            string(stdErr),
+			})
+		}
+
+		if len(edgeStackLog.Logs) > 0 {
+			payload.Snapshot.StackLogs = append(payload.Snapshot.StackLogs, edgeStackLog)
+		}
+	}
+}
+
+func (client *PortainerAsyncClient) rotateSnapshots(currentSnapshot snapshot, asyncResponse *AsyncResponse) {
+	if asyncResponse.NeedFullSnapshot && !client.snapshotRetried {
+		log.Debug().Msg("retrying with full snapshot")
+
+		client.snapshotRetried = true
+
+		if _, err := client.GetEnvironmentStatus("snapshot"); err != nil {
+			log.Error().Err(err).Msg("unable to resend the full snapshot")
+		}
+
+		return
+	}
+
+	client.snapshotRetried = false
+
+	client.lastSnapshot.Docker = cmp.Or(currentSnapshot.Docker, client.lastSnapshot.Docker)
+	client.lastSnapshot.Kubernetes = currentSnapshot.Kubernetes
+
+	if client.lastSnapshot.StackStatusArray == nil {
+		client.lastSnapshot.StackStatusArray = make(map[portainer.EdgeStackID][]portainer.EdgeStackDeploymentStatus)
+	}
+
+	for k, v := range client.nextSnapshot.StackStatusArray {
+		client.lastSnapshot.StackStatusArray[k] = v
+	}
+
+	client.nextSnapshot.StackStatusArray = nil
+	client.nextSnapshot.JobsStatus = nil
+	client.nextSnapshot.EdgeConfigStates = nil
+	client.stackLogCollectionQueue = nil
+}
+
 func snapshotHash(snapshot any) (uint32, bool) {
 	b := &bytes.Buffer{}
 
@@ -530,6 +595,10 @@ func snapshotHash(snapshot any) (uint32, bool) {
 }
 
 func optimizeDockerSnapshot(s *portainer.DockerSnapshot) {
+	sort.Slice(s.SnapshotRaw.Images, func(i, j int) bool {
+		return s.SnapshotRaw.Images[i].ID < s.SnapshotRaw.Images[j].ID
+	})
+
 	sort.Slice(s.SnapshotRaw.Networks, func(i, j int) bool {
 		return s.SnapshotRaw.Networks[i].Name < s.SnapshotRaw.Networks[j].Name
 	})
@@ -540,7 +609,7 @@ func optimizeDockerSnapshot(s *portainer.DockerSnapshot) {
 
 	for k := range s.SnapshotRaw.Containers {
 		sort.Slice(s.SnapshotRaw.Containers[k].Mounts, func(i, j int) bool {
-			return s.SnapshotRaw.Containers[k].Mounts[i].Name < s.SnapshotRaw.Containers[k].Mounts[j].Name
+			return s.SnapshotRaw.Containers[k].Mounts[i].Destination < s.SnapshotRaw.Containers[k].Mounts[j].Destination
 		})
 	}
 }

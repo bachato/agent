@@ -14,8 +14,7 @@ func CreateSnapshot(edgeKey string) (*portainer.DockerSnapshot, error) {
 	}
 	defer cli.Close()
 
-	_, err = cli.Ping(context.Background())
-	if err != nil {
+	if _, err := cli.Ping(context.Background()); err != nil {
 		return nil, err
 	}
 

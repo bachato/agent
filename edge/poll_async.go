@@ -146,8 +146,7 @@ func (service *PollService) startStatusPollLoopAsync() {
 
 			log.Debug().Bool("snapshot", snapshotFlag).Bool("command", commandFlag).Msg("sending async-poll")
 
-			err := service.pollAsync(snapshotFlag, commandFlag)
-			if err != nil {
+			if err := service.pollAsync(snapshotFlag, commandFlag); err != nil {
 				log.Error().Err(err).Msg("an error occurred during async poll")
 			}
 
@@ -256,13 +255,11 @@ func (service *PollService) processAsyncCommands(commands []client.AsyncCommand)
 
 func (service *PollService) processEdgeStackCommand(ctx context.Context, command client.AsyncCommand) error {
 	var stackData edge.StackPayload
-	err := mapstructure.Decode(command.Value, &stackData)
-	if err != nil {
+	if err := mapstructure.Decode(command.Value, &stackData); err != nil {
 		return newOperationError("stack", command.Operation, err)
 	}
 
-	err = service.portainerClient.SetEdgeStackStatus(stackData.ID, portainer.EdgeStackStatusAcknowledged, stackData.RollbackTo, "")
-	if err != nil {
+	if err := service.portainerClient.SetEdgeStackStatus(stackData.ID, portainer.EdgeStackStatusAcknowledged, stackData.RollbackTo, ""); err != nil {
 		return newOperationError("stack", command.Operation, err)
 	}
 
