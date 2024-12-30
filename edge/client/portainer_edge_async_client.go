@@ -3,7 +3,6 @@ package client
 import (
 	"bytes"
 	"cmp"
-	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,13 +14,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/image"
 	"github.com/portainer/agent"
 	"github.com/portainer/agent/docker"
 	"github.com/portainer/agent/kubernetes"
 	portainer "github.com/portainer/portainer/api"
 	"github.com/portainer/portainer/api/edge"
+
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/image"
+	"github.com/klauspost/compress/gzhttp/writer/gzkp"
+	"github.com/klauspost/compress/gzip"
 	"github.com/rs/zerolog/log"
 	"github.com/wI2L/jsondiff"
 )
@@ -244,10 +246,7 @@ func (client *PortainerAsyncClient) GetEnvironmentStatus(flags ...string) (*Poll
 func gzipCompress(data []byte) (*bytes.Buffer, error) {
 	buf := &bytes.Buffer{}
 
-	gz, err := gzip.NewWriterLevel(buf, gzip.BestCompression)
-	if err != nil {
-		return nil, err
-	}
+	gz := gzkp.NewWriter(buf, gzip.BestCompression)
 
 	if _, err := gz.Write(data); err != nil {
 		return nil, err
