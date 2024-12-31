@@ -399,7 +399,7 @@ func (service *PollService) processNormalStackCommand(ctx context.Context, comma
 
 	switch normalStackCommand.StackOperation {
 	case "remove":
-		err = service.edgeManager.stackManager.DeleteNormalStack(ctx, normalStackCommand.Name)
+		err = service.edgeManager.stackManager.DeleteNormalStack(ctx, normalStackCommand.Name, normalStackCommand.RemoveVolumes)
 	}
 
 	return newOperationError("normalStack", command.Operation, err)

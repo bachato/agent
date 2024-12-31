@@ -131,7 +131,7 @@ func (manager *StackManager) processStack(stackID int, stackStatus client.StackS
 	stack.RegistryCredentials = stackPayload.RegistryCredentials
 	stack.Namespace = stackPayload.Namespace
 	stack.PrePullImage = stackPayload.PrePullImage
-	stack.DeployerOptionsPayload.Prune = stackPayload.DeployerOptionsPayload.Prune
+	stack.DeployerOptionsPayload = stackPayload.DeployerOptionsPayload
 	stack.RePullImage = stackPayload.RePullImage
 	stack.RetryDeploy = stackPayload.RetryDeploy
 	stack.RetryPeriod = stackPayload.RetryPeriod
@@ -657,6 +657,7 @@ func (manager *StackManager) deleteStack(ctx context.Context, stack *edgeStack, 
 				WorkingDir: successFileFolder,
 				Env:        buildEnvVarsForDeployer(stack.EnvVars),
 			},
+			Volumes: stack.DeployerOptionsPayload.RemoveVolumes,
 		},
 	); err != nil {
 		log.Warn().

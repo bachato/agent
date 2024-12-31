@@ -166,6 +166,7 @@ type NormalStackCommandData struct {
 	Name             string
 	StackFileContent string
 	StackOperation   string
+	RemoveVolumes    bool
 }
 
 func (client *PortainerAsyncClient) GetEnvironmentID() (portainer.EndpointID, error) {

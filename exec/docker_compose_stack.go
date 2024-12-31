@@ -58,6 +58,7 @@ func (service *DockerComposeStackService) Remove(ctx context.Context, name strin
 			ProjectName: name,
 			Env:         options.Env,
 		},
+		Volumes: options.Volumes,
 	})
 }
 

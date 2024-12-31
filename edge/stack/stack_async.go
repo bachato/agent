@@ -9,10 +9,10 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func (manager *StackManager) DeleteNormalStack(ctx context.Context, stackName string) error {
+func (manager *StackManager) DeleteNormalStack(ctx context.Context, stackName string, removeVolumes bool) error {
 	log.Debug().Str("stack_name", stackName).Msg("removing normal stack")
 
-	if err := manager.deployer.Remove(ctx, stackName, []string{}, deployer.RemoveOptions{}); err != nil {
+	if err := manager.deployer.Remove(ctx, stackName, []string{}, deployer.RemoveOptions{Volumes: removeVolumes}); err != nil {
 		log.Error().Err(err).Msg("unable to remove normal stack")
 
 		return err
@@ -91,7 +91,7 @@ func (manager *StackManager) buildDeployerParams(stackPayload edge.StackPayload,
 	stack.PullCount = 0
 	stack.PullFinished = false
 	stack.DeployCount = 0
-	stack.DeployerOptionsPayload.Prune = stackPayload.DeployerOptionsPayload.Prune
+	stack.DeployerOptionsPayload = stackPayload.DeployerOptionsPayload
 
 	stack.SupportRelativePath = stackPayload.SupportRelativePath
 	stack.FilesystemPath = stackPayload.FilesystemPath

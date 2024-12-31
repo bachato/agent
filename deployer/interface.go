@@ -31,12 +31,16 @@ type (
 
 	DeployOptions struct {
 		DeployerBaseOptions
+		// compose up --remove-orphans
+		// stack up --prune
 		Prune       bool
 		EdgeStackID portainer.EdgeStackID
 	}
 
 	RemoveOptions struct {
 		DeployerBaseOptions
+		// compose down --volumes
+		Volumes bool
 	}
 
 	ValidateOptions struct {
