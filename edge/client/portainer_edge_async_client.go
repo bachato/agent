@@ -488,7 +488,7 @@ func (client *PortainerAsyncClient) createKubernetesSnapshot(payload *AsyncReque
 		return
 	}
 
-	kubePatch, err := jsondiff.Compare(client.lastSnapshot.Docker, kubeSnapshot)
+	kubePatch, err := jsondiff.Compare(client.lastSnapshot.Kubernetes, kubeSnapshot)
 	if err != nil {
 		log.Warn().Err(err).Msg("could not generate the Kubernetes snapshot patch")
 
