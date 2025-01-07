@@ -323,7 +323,7 @@ func (client *PortainerAsyncClient) executeAsyncRequest(payload AsyncRequest, po
 }
 
 // SetEdgeStackStatus updates the status of an Edge stack on the Portainer server
-func (client *PortainerAsyncClient) SetEdgeStackStatus(edgeStackID int, edgeStackStatus portainer.EdgeStackStatusType, rollbackTo *int, err string) error {
+func (client *PortainerAsyncClient) SetEdgeStackStatus(edgeStackID, version int, edgeStackStatus portainer.EdgeStackStatusType, rollbackTo *int, err string) error {
 	client.nextSnapshotMutex.Lock()
 	defer client.nextSnapshotMutex.Unlock()
 
@@ -344,6 +344,7 @@ func (client *PortainerAsyncClient) SetEdgeStackStatus(edgeStackID int, edgeStac
 			Error:      err,
 			RollbackTo: rollbackTo,
 			Time:       time.Now().Unix(),
+			Version:    version,
 		})
 	}
 

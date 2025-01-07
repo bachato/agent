@@ -43,6 +43,7 @@ type setEdgeStackStatusPayload struct {
 	EndpointID portainer.EndpointID
 	RollbackTo *int `json:",omitempty"`
 	Time       int64
+	Version    int
 }
 
 type logFilePayload struct {
@@ -225,7 +226,7 @@ func (client *PortainerEdgeClient) GetEdgeStackConfig(edgeStackID int, version *
 
 // SetEdgeStackStatus updates the status of an Edge stack on the Portainer server
 func (client *PortainerEdgeClient) SetEdgeStackStatus(
-	edgeStackID int,
+	edgeStackID, version int,
 	edgeStackStatus portainer.EdgeStackStatusType,
 	rollbackTo *int,
 	error string,
@@ -236,6 +237,7 @@ func (client *PortainerEdgeClient) SetEdgeStackStatus(
 		EndpointID: client.getEndpointIDFn(),
 		RollbackTo: rollbackTo,
 		Time:       time.Now().Unix(),
+		Version:    version,
 	}
 
 	log.Debug().

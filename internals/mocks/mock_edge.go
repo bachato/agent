@@ -149,17 +149,17 @@ func (mr *MockPortainerClientMockRecorder) SetEdgeJobStatus(edgeJobStatus any) *
 }
 
 // SetEdgeStackStatus mocks base method.
-func (m *MockPortainerClient) SetEdgeStackStatus(edgeStackID int, edgeStackStatus portainer.EdgeStackStatusType, rollbackTo *int, errMessage string) error {
+func (m *MockPortainerClient) SetEdgeStackStatus(edgeStackID, version int, edgeStackStatus portainer.EdgeStackStatusType, rollbackTo *int, errMessage string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SetEdgeStackStatus", edgeStackID, edgeStackStatus, rollbackTo, errMessage)
+	ret := m.ctrl.Call(m, "SetEdgeStackStatus", edgeStackID, version, edgeStackStatus, rollbackTo, errMessage)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // SetEdgeStackStatus indicates an expected call of SetEdgeStackStatus.
-func (mr *MockPortainerClientMockRecorder) SetEdgeStackStatus(edgeStackID, edgeStackStatus, rollbackTo, errMessage any) *gomock.Call {
+func (mr *MockPortainerClientMockRecorder) SetEdgeStackStatus(edgeStackID, version, edgeStackStatus, rollbackTo, errMessage any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetEdgeStackStatus", reflect.TypeOf((*MockPortainerClient)(nil).SetEdgeStackStatus), edgeStackID, edgeStackStatus, rollbackTo, errMessage)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetEdgeStackStatus", reflect.TypeOf((*MockPortainerClient)(nil).SetEdgeStackStatus), edgeStackID, version, edgeStackStatus, rollbackTo, errMessage)
 }
 
 // SetLastCommandTimestamp mocks base method.

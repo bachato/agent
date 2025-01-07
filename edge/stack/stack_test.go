@@ -47,7 +47,7 @@ func TestStackManager_pullImages(t *testing.T) {
 			},
 		}).Return(nil)
 
-		mockPortainerClient.EXPECT().SetEdgeStackStatus(stack.ID, portainer.EdgeStackStatusImagesPulled, stack.RollbackTo, "").Return(nil)
+		mockPortainerClient.EXPECT().SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusImagesPulled, stack.RollbackTo, "").Return(nil)
 
 		err := manager.pullImages(ctx, stack, stackName, stackFileLocation)
 		assert.NoError(t, err)
@@ -137,7 +137,7 @@ func TestStackManager_deployStack(t *testing.T) {
 		stackName := "my-stack"
 		stackFileLocation := "/path/to/stack/stack.yml"
 
-		mockPortainerClient.EXPECT().SetEdgeStackStatus(stack.ID, portainer.EdgeStackStatusDeploying, stack.RollbackTo, "").Return(nil)
+		mockPortainerClient.EXPECT().SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusDeploying, stack.RollbackTo, "").Return(nil)
 		mockDeployer.EXPECT().Deploy(ctx, stackName, []string{stackFileLocation}, deployer.DeployOptions{
 			EdgeStackID: portainer.EdgeStackID(stack.ID),
 			DeployerBaseOptions: deployer.DeployerBaseOptions{
@@ -146,7 +146,7 @@ func TestStackManager_deployStack(t *testing.T) {
 				Env:        buildEnvVarsForDeployer(stack.EnvVars),
 			},
 		}).Return(nil)
-		mockPortainerClient.EXPECT().SetEdgeStackStatus(stack.ID, portainer.EdgeStackStatusDeploymentReceived, stack.RollbackTo, "").Return(nil)
+		mockPortainerClient.EXPECT().SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusDeploymentReceived, stack.RollbackTo, "").Return(nil)
 
 		manager.deployStack(ctx, stack, stackName, stackFileLocation)
 
@@ -174,7 +174,7 @@ func TestStackManager_deployStack(t *testing.T) {
 		stackName := "my-stack"
 		stackFileLocation := "/path/to/stack/stack.yml"
 
-		mockPortainerClient.EXPECT().SetEdgeStackStatus(stack.ID, portainer.EdgeStackStatusDeploying, stack.RollbackTo, "").Return(nil)
+		mockPortainerClient.EXPECT().SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusDeploying, stack.RollbackTo, "").Return(nil)
 		mockDeployer.EXPECT().Deploy(ctx, stackName, []string{stackFileLocation}, deployer.DeployOptions{
 			EdgeStackID: portainer.EdgeStackID(stack.ID),
 			DeployerBaseOptions: deployer.DeployerBaseOptions{
@@ -210,7 +210,7 @@ func TestStackManager_deployStack(t *testing.T) {
 		stackName := "my-stack"
 		stackFileLocation := "/path/to/stack/stack.yml"
 
-		mockPortainerClient.EXPECT().SetEdgeStackStatus(stack.ID, portainer.EdgeStackStatusDeploying, stack.RollbackTo, "").Return(nil)
+		mockPortainerClient.EXPECT().SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusDeploying, stack.RollbackTo, "").Return(nil)
 		mockDeployer.EXPECT().Deploy(ctx, stackName, []string{stackFileLocation}, deployer.DeployOptions{
 			EdgeStackID: portainer.EdgeStackID(stack.ID),
 			DeployerBaseOptions: deployer.DeployerBaseOptions{
@@ -219,7 +219,7 @@ func TestStackManager_deployStack(t *testing.T) {
 				Env:        buildEnvVarsForDeployer(stack.EnvVars),
 			},
 		}).Return(errors.New("deploy failed"))
-		mockPortainerClient.EXPECT().SetEdgeStackStatus(stack.ID, portainer.EdgeStackStatusError, stack.RollbackTo, "failed to redeploy stack: deploy failed").Return(nil)
+		mockPortainerClient.EXPECT().SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusError, stack.RollbackTo, "failed to redeploy stack: deploy failed").Return(nil)
 
 		manager.deployStack(ctx, stack, stackName, stackFileLocation)
 

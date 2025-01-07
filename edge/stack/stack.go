@@ -162,7 +162,7 @@ func (manager *StackManager) processStack(stackID int, stackStatus client.StackS
 		Str("namespace", stack.Namespace).
 		Msg("stack acknowledged")
 
-	return manager.portainerClient.SetEdgeStackStatus(stack.ID, portainer.EdgeStackStatusAcknowledged, stack.RollbackTo, "")
+	return manager.portainerClient.SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusAcknowledged, stack.RollbackTo, "")
 }
 
 func (manager *StackManager) processRemovedStacks(pollResponseStacks map[int]client.StackStatus) {
@@ -243,7 +243,7 @@ func (manager *StackManager) performActionOnStack() {
 				stack.Status = StatusError
 				manager.mu.Unlock()
 
-				if err := manager.portainerClient.SetEdgeStackStatus(stack.ID, portainer.EdgeStackStatusError, stack.RollbackTo, fmt.Errorf("failed to copy git stack to host: %w", err).Error()); err != nil {
+				if err := manager.portainerClient.SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusError, stack.RollbackTo, fmt.Errorf("failed to copy git stack to host: %w", err).Error()); err != nil {
 					log.Error().Err(err).Msg("unable to update Edge stack status")
 				}
 
@@ -362,7 +362,7 @@ func (manager *StackManager) checkStackStatus(ctx context.Context, stackName str
 	if stack.Status == StatusDeployed {
 		if status == libstack.StatusCompleted {
 			stack.Status = StatusCompleted
-			return manager.portainerClient.SetEdgeStackStatus(stack.ID, portainer.EdgeStackStatusCompleted, stack.RollbackTo, "")
+			return manager.portainerClient.SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusCompleted, stack.RollbackTo, "")
 		}
 
 		return nil
@@ -371,18 +371,18 @@ func (manager *StackManager) checkStackStatus(ctx context.Context, stackName str
 	switch status {
 	case libstack.StatusError:
 		stack.Status = StatusError
-		return manager.portainerClient.SetEdgeStackStatus(stack.ID, portainer.EdgeStackStatusError, stack.RollbackTo, statusMessage)
+		return manager.portainerClient.SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusError, stack.RollbackTo, statusMessage)
 	case libstack.StatusRunning:
 		stack.Status = StatusDeployed
-		return manager.portainerClient.SetEdgeStackStatus(stack.ID, portainer.EdgeStackStatusRunning, stack.RollbackTo, "")
+		return manager.portainerClient.SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusRunning, stack.RollbackTo, "")
 	case libstack.StatusCompleted:
 		stack.Status = StatusCompleted
-		return manager.portainerClient.SetEdgeStackStatus(stack.ID, portainer.EdgeStackStatusCompleted, stack.RollbackTo, "")
+		return manager.portainerClient.SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusCompleted, stack.RollbackTo, "")
 	case libstack.StatusRemoved:
 		if stack.Status == StatusAwaitingRemovedStatus {
 			stack.Status = StatusAwaitingCleanup
 		}
-		return manager.portainerClient.SetEdgeStackStatus(stack.ID, portainer.EdgeStackStatusRemoved, stack.RollbackTo, "")
+		return manager.portainerClient.SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusRemoved, stack.RollbackTo, "")
 	default:
 	}
 
@@ -425,7 +425,7 @@ func (manager *StackManager) validateStackFile(ctx context.Context, stack *edgeS
 		log.Error().Int("stack_identifier", stack.ID).Err(err).Msg("stack validation failed")
 		stack.Status = StatusError
 
-		statusUpdateErr := manager.portainerClient.SetEdgeStackStatus(stack.ID, portainer.EdgeStackStatusError, stack.RollbackTo, fmt.Errorf("failed to validate stack: %w", err).Error())
+		statusUpdateErr := manager.portainerClient.SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusError, stack.RollbackTo, fmt.Errorf("failed to validate stack: %w", err).Error())
 		if statusUpdateErr != nil {
 			log.Error().Err(statusUpdateErr).Msg("unable to update Edge stack status")
 		}
@@ -481,7 +481,7 @@ func (manager *StackManager) pullImages(ctx context.Context, stack *edgeStack, s
 
 		stack.Status = StatusError
 
-		statusUpdateErr := manager.portainerClient.SetEdgeStackStatus(stack.ID, portainer.EdgeStackStatusError, stack.RollbackTo, fmt.Errorf("failed to pull image: %w", err).Error())
+		statusUpdateErr := manager.portainerClient.SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusError, stack.RollbackTo, fmt.Errorf("failed to pull image: %w", err).Error())
 		if statusUpdateErr != nil {
 			log.Error().
 				Err(statusUpdateErr).
@@ -499,7 +499,7 @@ func (manager *StackManager) pullImages(ctx context.Context, stack *edgeStack, s
 		Int("stack_version", stack.Version).
 		Msg("images pulled")
 
-	statusUpdateErr := manager.portainerClient.SetEdgeStackStatus(stack.ID, portainer.EdgeStackStatusImagesPulled, stack.RollbackTo, "")
+	statusUpdateErr := manager.portainerClient.SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusImagesPulled, stack.RollbackTo, "")
 	if statusUpdateErr != nil {
 		log.Error().
 			Err(statusUpdateErr).
@@ -516,7 +516,7 @@ func (manager *StackManager) deployStack(ctx context.Context, stack *edgeStack, 
 
 	stack.DeployCount++
 
-	if err := manager.portainerClient.SetEdgeStackStatus(stack.ID, portainer.EdgeStackStatusDeploying, stack.RollbackTo, ""); err != nil {
+	if err := manager.portainerClient.SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusDeploying, stack.RollbackTo, ""); err != nil {
 		log.Error().Err(err).Msg("unable to update Edge stack status")
 	}
 
@@ -566,7 +566,7 @@ func (manager *StackManager) deployStack(ctx context.Context, stack *edgeStack, 
 
 		stack.Status = StatusError
 
-		if err := manager.portainerClient.SetEdgeStackStatus(stack.ID, portainer.EdgeStackStatusError, stack.RollbackTo, fmt.Errorf("failed to redeploy stack: %w", err).Error()); err != nil {
+		if err := manager.portainerClient.SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusError, stack.RollbackTo, fmt.Errorf("failed to redeploy stack: %w", err).Error()); err != nil {
 			log.Error().Err(err).Msg("unable to update Edge stack status")
 		}
 
@@ -579,7 +579,7 @@ func (manager *StackManager) deployStack(ctx context.Context, stack *edgeStack, 
 		Int("stack_identifier", stack.ID).
 		Int("stack_version", stack.Version).Msg("stack deployed")
 
-	if err := manager.portainerClient.SetEdgeStackStatus(stack.ID, portainer.EdgeStackStatusDeploymentReceived, stack.RollbackTo, ""); err != nil {
+	if err := manager.portainerClient.SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusDeploymentReceived, stack.RollbackTo, ""); err != nil {
 		log.Error().Err(err).Msg("unable to update Edge stack status")
 	}
 
@@ -674,7 +674,7 @@ func (manager *StackManager) deleteStack(ctx context.Context, stack *edgeStack, 
 		return
 	}
 
-	if err := manager.portainerClient.SetEdgeStackStatus(stack.ID, portainer.EdgeStackStatusRemoving, stack.RollbackTo, ""); err != nil {
+	if err := manager.portainerClient.SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusRemoving, stack.RollbackTo, ""); err != nil {
 		log.Error().Err(err).Msg("unable to delete Edge stack status")
 
 		return
