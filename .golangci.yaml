@@ -17,8 +17,6 @@ linters-settings:
     rules:
       main:
         deny:
-          - pkg: "github.com/sirupsen/logrus"
-            desc: "logging is allowed only by github.com/rs/zerolog"
           - pkg: "golang.org/x/exp"
             desc: "exp is not allowed"
           - pkg: "github.com/portainer/libcrypto"
