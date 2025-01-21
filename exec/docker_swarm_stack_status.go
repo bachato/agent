@@ -33,13 +33,15 @@ func (service *DockerSwarmStackService) WaitForStatus(ctx context.Context, name 
 
 			continue
 		}
+		cliCtx, cancelFunc := context.WithTimeout(context.Background(), time.Minute)
+		defer cancelFunc()
 
 		// Create a filter to match the services belonging to the stack
 		stackFilter := filters.NewArgs()
 		stackFilter.Add("label", "com.docker.stack.namespace="+name)
 
 		// Retrieve the services of the stack
-		services, err := cli.ServiceList(ctx, types.ServiceListOptions{
+		services, err := cli.ServiceList(cliCtx, types.ServiceListOptions{
 			Filters: stackFilter,
 		})
 		if err != nil {
@@ -56,7 +58,7 @@ func (service *DockerSwarmStackService) WaitForStatus(ctx context.Context, name 
 		var serviceStatuses []libstack.Status
 
 		for _, service := range services {
-			serviceStatus, statusMessage, err := getServiceStatus(ctx, cli, service)
+			serviceStatus, statusMessage, err := getServiceStatus(cliCtx, cli, service)
 			if err != nil {
 				log.Warn().
 					Str("project_name", name).

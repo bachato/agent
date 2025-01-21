@@ -18,6 +18,8 @@ image_name=""
 env_vars=()
 
 LOG_LEVEL=DEBUG
+tls=0
+cert_path=""
 
 function deploy_command() {
     parse_deploy_params "${@:1}"
@@ -29,6 +31,10 @@ function deploy_command() {
         IMAGE_NAME=$ret_value
     fi
     deploy
+}
+
+function dockerWithTLSSupport() {
+  DOCKER_TLS_VERIFY=$tls DOCKER_CERT_PATH=$cert_path docker "$@"
 }
 
 function deploy() {
@@ -53,7 +59,12 @@ function deploy() {
     
     url=""
     if [ ${#ips[@]} -ne 0 ]; then
-        url="${ips[0]}:2375"
+        url="${ips[0]}"
+        if [[ $tls == "1" ]]; then
+          url+=":2376"
+        else
+          url+=":2375"
+        fi
     fi
     
     if [ -z "$mode" ] || [ "$mode" == "standalone" ]; then
@@ -78,8 +89,8 @@ function load_image() {
     msg "Exporting image to machine..."
     docker save "${image_name}" -o "/tmp/portainer-agent.tar"
     
-    docker -H "$url" rmi -f "${IMAGE_NAME}" || true
-    docker -H "$url" load -i "/tmp/portainer-agent.tar"
+    dockerWithTLSSupport -H "$url" rmi -f "${IMAGE_NAME}" || true
+    dockerWithTLSSupport -H "$url" load -i "/tmp/portainer-agent.tar"
     
     if [ ${#node_ips[@]} -eq 0 ]; then
         return 0
@@ -87,8 +98,8 @@ function load_image() {
     
     msg "Exporting image to nodes..."
     for node_ip in "${node_ips[@]}"; do
-        docker -H "${node_ip}:2375" rmi -f "${IMAGE_NAME}" || true
-        docker -H "${node_ip}:2375" load -i "/tmp/portainer-agent.tar"
+        dockerWithTLSSupport -H "${node_ip}:2375" rmi -f "${IMAGE_NAME}" || true
+        dockerWithTLSSupport -H "${node_ip}:2375" load -i "/tmp/portainer-agent.tar"
     done
 }
 
@@ -98,7 +109,7 @@ function deploy_standalone() {
     
     CONTAINER_NAME="${CONTAINER_NAME:-"portainer-agent-dev"}"
 
-    docker -H "$url" rm -f "$CONTAINER_NAME" || true
+    dockerWithTLSSupport -H "$url" rm -f "$CONTAINER_NAME" || true
     
     load_image "$IMAGE_NAME" "$url"
     
@@ -139,7 +150,7 @@ function deploy_standalone() {
 
     "${cmd[@]}"
     
-    docker -H "$url" logs -f "$CONTAINER_NAME"
+    dockerWithTLSSupport -H "$url" logs -f "$CONTAINER_NAME"
 }
 
 function deploy_podman() {
@@ -180,16 +191,20 @@ function deploy_swarm() {
     msg "Cleaning..."
     rm "/tmp/portainer-agent.tar" || true
     
-    docker -H "$url" service rm portainer-agent-dev || true
-    docker -H "$url" network rm portainer-agent-dev-net || true
+    dockerWithTLSSupport -H "$url" service rm portainer-agent-dev || true
+    dockerWithTLSSupport -H "$url" network rm portainer-agent-dev-net || true
     
     load_image "$IMAGE_NAME" "$url" "${node_ips[@]}"
     
     sleep 2
     
-    docker -H "$url" network create --driver overlay portainer-agent-dev-net
+    dockerWithTLSSupport -H "$url" network create --driver overlay portainer-agent-dev-net
 
-    cmd=(docker)
+    if [[ "$tls" == "1" ]]; then
+      cmd=(dockerWithTLSSupport)
+    else
+      cmd=(docker)
+    fi
     
     if [ -n "$url" ]; then
         cmd+=(-H "$url")
@@ -204,6 +219,7 @@ function deploy_swarm() {
         cmd+=(-e EDGE_ID="$edge_id")
         cmd+=(-e EDGE_ASYNC="$edge_async")
         cmd+=(-e EDGE_INSECURE_POLL=1)
+        # cmd+=(-e DOCKER_API_VERSION="1.40")
 
         if [ -n "$edge_key" ]; then
             cmd+=(-e EDGE_KEY="$edge_key")
@@ -218,16 +234,16 @@ function deploy_swarm() {
         cmd+=(-e "$env_var")
     done
 
-    cmd+=(--host host.docker.internal:host-gateway)
+    # cmd+=(--host host.docker.internal:host-gateway)
     cmd+=(--mode global)
-    cmd+=(--mount "type=bind,src=//var/run/docker.sock,dst=/var/run/docker.sock")
-    cmd+=(--mount "type=bind,src=//var/lib/docker/volumes,dst=/var/lib/docker/volumes")
-    cmd+=(--mount "type=bind,src=//,dst=/host")
+    cmd+=(--mount "type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock")
+    cmd+=(--mount "type=bind,src=/var/lib/docker/volumes,dst=/var/lib/docker/volumes")
+    cmd+=(--mount "type=bind,src=/,dst=/host")
     cmd+=("${IMAGE_NAME}")
     
     "${cmd[@]}"
 
-    docker -H "$url" service logs -f portainer-agent-dev
+    dockerWithTLSSupport -H "$url" service logs -f portainer-agent-dev
 }
 
 function parse_deploy_params() {
@@ -277,6 +293,13 @@ function parse_deploy_params() {
                 image_name=$2
                 shift
             ;;
+            --tls)
+              tls=1
+              ;;
+            --cert-path)
+              cert_path=$2
+              shift
+              ;;
             -?*) die "Unknown option: $1" ;;
             *) break ;;
         esac
