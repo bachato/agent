@@ -3,6 +3,7 @@ package client
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"net"
 	"net/http"
 	"os"
 	"sync"
@@ -24,6 +25,7 @@ type edgeHTTPClient struct {
 	keyMTime      time.Time
 	caMTime       time.Time
 	mu            sync.RWMutex
+	localAddr     *net.TCPAddr
 }
 
 func BuildHTTPClient(timeout float64, options *agent.Options) *edgeHTTPClient {
@@ -59,6 +61,13 @@ func (c *edgeHTTPClient) Do(req *http.Request) (*http.Response, error) {
 	return c.httpClient.Do(req)
 }
 
+func (c *edgeHTTPClient) SetLocalAddr(localAddr *net.TCPAddr) {
+	c.mu.Lock()
+	c.localAddr = localAddr
+	c.httpClient.Transport = c.buildTransport()
+	c.mu.Unlock()
+}
+
 func fileModified(filename string, mtime time.Time) bool {
 	stat, err := os.Stat(filename)
 
@@ -77,6 +86,14 @@ func (c *edgeHTTPClient) certsNeedsRotation() bool {
 
 func (c *edgeHTTPClient) buildTransport() *http.Transport {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
+
+	if c.localAddr != nil {
+		transport.DialContext = (&net.Dialer{
+			LocalAddr: c.localAddr,
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext
+	}
 
 	transport.TLSClientConfig = crypto.CreateTLSConfiguration()
 	transport.TLSClientConfig.ClientSessionCache = tls.NewLRUClientSessionCache(0)
