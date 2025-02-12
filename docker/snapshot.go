@@ -5,9 +5,21 @@ import (
 
 	portainer "github.com/portainer/portainer/api"
 	"github.com/portainer/portainer/pkg/snapshot"
+
+	"golang.org/x/sync/singleflight"
 )
 
+var snapshotSingleflight singleflight.Group
+
 func CreateSnapshot(edgeKey string) (*portainer.DockerSnapshot, error) {
+	snapshot, err, _ := snapshotSingleflight.Do(edgeKey, func() (interface{}, error) {
+		return createSnapshot(edgeKey)
+	})
+
+	return snapshot.(*portainer.DockerSnapshot), err
+}
+
+func createSnapshot(edgeKey string) (*portainer.DockerSnapshot, error) {
 	cli, err := NewClient()
 	if err != nil {
 		return nil, err
