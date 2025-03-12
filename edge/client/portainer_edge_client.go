@@ -23,6 +23,7 @@ const requestRetryWait = 5 * time.Second
 
 // PortainerEdgeClient is used to execute HTTP requests against the Portainer API
 type PortainerEdgeClient struct {
+	version         string
 	httpClient      *edgeHTTPClient
 	serverAddress   string
 	setEndpointIDFn setEndpointIDFn
@@ -63,8 +64,23 @@ func (e *NonOkResponseError) Error() string {
 }
 
 // NewPortainerEdgeClient returns a pointer to a new PortainerEdgeClient instance
-func NewPortainerEdgeClient(serverAddress string, setEIDFn setEndpointIDFn, getEIDFn getEndpointIDFn, edgeID string, agentPlatform agent.ContainerPlatform, metaFields agent.EdgeMetaFields, httpClient *edgeHTTPClient) *PortainerEdgeClient {
+func NewPortainerEdgeClient(
+	serverAddress string,
+	setEIDFn setEndpointIDFn,
+	getEIDFn getEndpointIDFn,
+	edgeID string,
+	agentPlatform agent.ContainerPlatform,
+	metaFields agent.EdgeMetaFields,
+	httpClient *edgeHTTPClient,
+	opts ...Option,
+) *PortainerEdgeClient {
+	clientOpts := defaultOptions()
+	for _, o := range opts {
+		o(clientOpts)
+	}
+
 	c := &PortainerEdgeClient{
+		version:         clientOpts.version,
 		serverAddress:   serverAddress,
 		setEndpointIDFn: setEIDFn,
 		getEndpointIDFn: getEIDFn,
@@ -146,7 +162,7 @@ func (client *PortainerEdgeClient) GetEnvironmentStatus(flags ...string) (*PollS
 
 	req.Header.Set("If-None-Match", client.cacheHeaders())
 
-	req.Header.Set(agent.HTTPResponseAgentHeaderName, agent.Version)
+	req.Header.Set(agent.HTTPResponseAgentHeaderName, client.version)
 	req.Header.Set(agent.HTTPEdgeIdentifierHeaderName, client.edgeID)
 
 	timeZone := time.Local.String()

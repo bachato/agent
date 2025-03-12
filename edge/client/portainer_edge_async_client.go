@@ -30,6 +30,8 @@ import (
 
 // PortainerAsyncClient is used to execute HTTP requests using only the /api/entrypoint/async api endpoint
 type PortainerAsyncClient struct {
+	version string
+
 	httpClient              *edgeHTTPClient
 	serverAddress           string
 	setEndpointIDFn         setEndpointIDFn
@@ -50,9 +52,24 @@ type PortainerAsyncClient struct {
 }
 
 // NewPortainerAsyncClient returns a pointer to a new PortainerAsyncClient instance
-func NewPortainerAsyncClient(serverAddress string, setEIDFn setEndpointIDFn, getEIDFn getEndpointIDFn, edgeID string, edgeKey string, containerPlatform agent.ContainerPlatform, metaFields agent.EdgeMetaFields, httpClient *edgeHTTPClient) *PortainerAsyncClient {
+func NewPortainerAsyncClient(
+	serverAddress string,
+	setEIDFn setEndpointIDFn,
+	getEIDFn getEndpointIDFn,
+	edgeID string,
+	edgeKey string,
+	containerPlatform agent.ContainerPlatform,
+	metaFields agent.EdgeMetaFields,
+	httpClient *edgeHTTPClient,
+	opts ...Option,
+) *PortainerAsyncClient {
+	clientOpts := defaultOptions()
+	for _, o := range opts {
+		o(clientOpts)
+	}
 	initialCommandTimestamp := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 	return &PortainerAsyncClient{
+		version:                 clientOpts.version,
 		serverAddress:           serverAddress,
 		setEndpointIDFn:         setEIDFn,
 		getEndpointIDFn:         getEIDFn,
@@ -283,16 +300,16 @@ func (client *PortainerAsyncClient) executeAsyncRequest(payload AsyncRequest, po
 	}
 
 	req.Header.Set(agent.HTTPEdgeIdentifierHeaderName, client.edgeID)
-	req.Header.Set(agent.HTTPResponseAgentHeaderName, agent.Version)
+	req.Header.Set(agent.HTTPResponseAgentHeaderName, client.version)
 	req.Header.Set(agent.HTTPResponseAgentTimeZone, time.Local.String())
 	req.Header.Set(agent.HTTPResponseUpdateIDHeaderName, strconv.Itoa(client.metaFields.UpdateID))
 	req.Header.Set(agent.HTTPResponseAgentPlatform, strconv.Itoa(int(client.agentPlatformIdentifier)))
 
 	log.Debug().
 		Str(agent.HTTPEdgeIdentifierHeaderName, client.edgeID).
-		Int(agent.HTTPResponseUpdateIDHeaderName, (client.metaFields.UpdateID)).
-		Int(agent.HTTPResponseAgentPlatform, (int(client.agentPlatformIdentifier))).
-		Str(agent.HTTPResponseAgentHeaderName, agent.Version).
+		Int(agent.HTTPResponseUpdateIDHeaderName, client.metaFields.UpdateID).
+		Int(agent.HTTPResponseAgentPlatform, int(client.agentPlatformIdentifier)).
+		Str(agent.HTTPResponseAgentHeaderName, client.version).
 		Str(agent.HTTPResponseAgentTimeZone, time.Local.String()).
 		Int("endpoint_id", int(client.getEndpointIDFn())).
 		Msg("sending async request with headers")
