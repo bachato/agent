@@ -49,6 +49,8 @@ type PortainerAsyncClient struct {
 	snapshotRetried   bool
 
 	stackLogCollectionQueue []LogCommandData
+
+	dockerSnapshotter DockerSnapshotter
 }
 
 // NewPortainerAsyncClient returns a pointer to a new PortainerAsyncClient instance
@@ -79,6 +81,7 @@ func NewPortainerAsyncClient(
 		agentPlatformIdentifier: containerPlatform,
 		commandTimestamp:        &initialCommandTimestamp,
 		metaFields:              metaFields,
+		dockerSnapshotter:       clientOpts.dockerSnapshotter,
 	}
 }
 
@@ -184,6 +187,10 @@ type NormalStackCommandData struct {
 	StackFileContent string
 	StackOperation   string
 	RemoveVolumes    bool
+}
+
+type DockerSnapshotter interface {
+	CreateSnapshot(edgeKey string) (*portainer.DockerSnapshot, error)
 }
 
 func (client *PortainerAsyncClient) GetEnvironmentID() (portainer.EndpointID, error) {
@@ -425,7 +432,7 @@ func (client *PortainerAsyncClient) EnqueueLogCollectionForStack(logCmd LogComma
 }
 
 func (client *PortainerAsyncClient) createDockerSnapshot(payload *AsyncRequest, currentSnapshot *snapshot) {
-	dockerSnapshot, err := docker.CreateSnapshot(client.edgeKey)
+	dockerSnapshot, err := client.dockerSnapshotter.CreateSnapshot(client.edgeKey)
 	if err != nil {
 		log.Warn().Err(err).Msg("could not create the Docker snapshot")
 

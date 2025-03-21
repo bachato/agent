@@ -7,7 +7,9 @@ import (
 	"github.com/portainer/portainer/pkg/snapshot"
 )
 
-func CreateSnapshot(edgeKey string) (*portainer.DockerSnapshot, error) {
+type Snapshotter struct{}
+
+func (Snapshotter) CreateSnapshot(edgeKey string) (*portainer.DockerSnapshot, error) {
 	cli, err := NewClient()
 	if err != nil {
 		return nil, err
