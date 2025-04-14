@@ -160,7 +160,10 @@ type EdgeJobData struct {
 type LogCommandData struct {
 	EdgeStackID   portainer.EdgeStackID
 	EdgeStackName string
+	ContainerID   string
 	Tail          int
+	Since         string
+	Until         string
 }
 
 type ContainerCommandData struct {
@@ -526,33 +529,44 @@ func (client *PortainerAsyncClient) createKubernetesSnapshot(payload *AsyncReque
 }
 
 func (client *PortainerAsyncClient) getEdgeStackLogs(payload *AsyncRequest) {
-	for _, stack := range client.stackLogCollectionQueue {
-		cs, err := docker.GetContainersWithLabel("com.docker.compose.project=edge_" + stack.EdgeStackName)
-		if err != nil {
-			log.Warn().
-				Str("stack", stack.EdgeStackName).
-				Err(err).
-				Msg("could not retrieve containers for stack")
+	for _, logCmd := range client.stackLogCollectionQueue {
+		var csIDs []string
 
-			continue
-		}
-
-		cs2, err := docker.GetContainersWithLabel("com.docker.stack.namespace=edge_" + stack.EdgeStackName)
-		if err != nil {
-			log.Warn().Err(err).Msg("could not retrieve containers for stack")
-
-			continue
-		}
-
-		cs = append(cs, cs2...)
-
-		edgeStackLog := EdgeStackLog{EdgeStackID: stack.EdgeStackID}
-
-		for _, c := range cs {
-			stdOut, stdErr, err := docker.GetContainerLogs(c.ID, strconv.Itoa(stack.Tail))
+		// Whole edge stack
+		if logCmd.ContainerID == "" {
+			cs, err := docker.GetContainersWithLabel("com.docker.compose.project=edge_" + logCmd.EdgeStackName)
 			if err != nil {
 				log.Warn().
-					Str("container_id", c.ID).
+					Str("stack", logCmd.EdgeStackName).
+					Err(err).
+					Msg("could not retrieve containers for stack")
+
+				continue
+			}
+
+			cs2, err := docker.GetContainersWithLabel("com.docker.stack.namespace=edge_" + logCmd.EdgeStackName)
+			if err != nil {
+				log.Warn().Err(err).Msg("could not retrieve containers for stack")
+
+				continue
+			}
+
+			cs = append(cs, cs2...)
+
+			for _, c := range cs {
+				csIDs = append(csIDs, c.ID)
+			}
+		} else { // Just one container
+			csIDs = []string{logCmd.ContainerID}
+		}
+
+		edgeStackLog := EdgeStackLog{EdgeStackID: logCmd.EdgeStackID}
+
+		for _, cID := range csIDs {
+			stdOut, stdErr, err := docker.GetContainerLogs(cID, strconv.Itoa(logCmd.Tail), logCmd.Since, logCmd.Until)
+			if err != nil {
+				log.Warn().
+					Str("container_id", cID).
 					Err(err).
 					Msg("could not retrieve logs for container")
 
@@ -560,7 +574,7 @@ func (client *PortainerAsyncClient) getEdgeStackLogs(payload *AsyncRequest) {
 			}
 
 			edgeStackLog.Logs = append(edgeStackLog.Logs, EndpointLog{
-				DockerContainerID: c.ID,
+				DockerContainerID: cID,
 				StdOut:            string(stdOut),
 				StdErr:            string(stdErr),
 			})

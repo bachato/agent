@@ -27,7 +27,7 @@ func GetContainersWithLabel(value string) (r []types.Container, err error) {
 	return r, err
 }
 
-func GetContainerLogs(containerName string, tail string) ([]byte, []byte, error) {
+func GetContainerLogs(containerName string, tail, since, until string) ([]byte, []byte, error) {
 	cli, err := NewClient()
 	if err != nil {
 		return nil, nil, err
@@ -38,6 +38,9 @@ func GetContainerLogs(containerName string, tail string) ([]byte, []byte, error)
 		ShowStdout: true,
 		ShowStderr: true,
 		Tail:       tail,
+		Timestamps: true,
+		Since:      since,
+		Until:      until,
 	})
 	if err != nil {
 		return nil, nil, err
