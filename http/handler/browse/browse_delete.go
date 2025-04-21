@@ -12,6 +12,7 @@ import (
 // DELETE request on /browse/delete?volumeID=:id&path=:path
 func (handler *Handler) browseDelete(rw http.ResponseWriter, r *http.Request) *httperror.HandlerError {
 	volumeID, _ := request.RetrieveQueryParameter(r, "volumeID", true)
+
 	path, err := request.RetrieveQueryParameter(r, "path", false)
 	if err != nil {
 		return httperror.BadRequest("Invalid query parameter: path", err)
@@ -24,8 +25,7 @@ func (handler *Handler) browseDelete(rw http.ResponseWriter, r *http.Request) *h
 		}
 	}
 
-	err = filesystem.RemoveFile(path)
-	if err != nil {
+	if err := filesystem.RemoveFile(path); err != nil {
 		return httperror.InternalServerError("Unable to remove file", err)
 	}
 
@@ -40,13 +40,16 @@ func (handler *Handler) browseDeleteV1(rw http.ResponseWriter, r *http.Request) 
 	}
 
 	path, err := request.RetrieveQueryParameter(r, "path", false)
-	fullPath, err := filesystem.BuildPathToFileInsideVolume(volumeID, path)
 	if err != nil {
 		return httperror.BadRequest("Invalid query parameter: path", err)
 	}
 
-	err = filesystem.RemoveFile(fullPath)
+	fullPath, err := filesystem.BuildPathToFileInsideVolume(volumeID, path)
 	if err != nil {
+		return httperror.BadRequest("Invalid path", err)
+	}
+
+	if err := filesystem.RemoveFile(fullPath); err != nil {
 		return httperror.InternalServerError("Unable to remove file", err)
 	}
 

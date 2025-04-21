@@ -40,10 +40,13 @@ func (handler *Handler) browseListV1(rw http.ResponseWriter, r *http.Request) *h
 	}
 
 	path, err := request.RetrieveQueryParameter(r, "path", false)
-	path, err = filesystem.BuildPathToFileInsideVolume(volumeID, path)
-
 	if err != nil {
 		return httperror.BadRequest("Invalid query parameter: path", err)
+	}
+
+	path, err = filesystem.BuildPathToFileInsideVolume(volumeID, path)
+	if err != nil {
+		return httperror.BadRequest("Invalid path", err)
 	}
 
 	files, err := filesystem.ListFilesInsideDirectory(path)

@@ -42,10 +42,13 @@ func (handler *Handler) browseGetV1(rw http.ResponseWriter, r *http.Request) *ht
 	}
 
 	path, err := request.RetrieveQueryParameter(r, "path", false)
-	path, err = filesystem.BuildPathToFileInsideVolume(volumeID, path)
-
 	if err != nil {
 		return httperror.BadRequest("Invalid query parameter: path", err)
+	}
+
+	path, err = filesystem.BuildPathToFileInsideVolume(volumeID, path)
+	if err != nil {
+		return httperror.BadRequest("Invalid path", err)
 	}
 
 	fileDetails, err := filesystem.OpenFile(path)
