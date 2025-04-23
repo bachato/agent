@@ -7,8 +7,8 @@ import (
 
 	httperror "github.com/portainer/portainer/pkg/libhttp/error"
 	"github.com/portainer/portainer/pkg/libhttp/request"
+	"github.com/portainer/portainer/pkg/validate"
 
-	"github.com/asaskevich/govalidator"
 	"github.com/gorilla/websocket"
 )
 
@@ -22,7 +22,7 @@ func (handler *Handler) handleExecRequest(rw http.ResponseWriter, r *http.Reques
 		return httperror.BadRequest("Invalid query parameter: id", err)
 	}
 
-	if !govalidator.IsHexadecimal(execID) {
+	if !validate.IsHexadecimal(execID) {
 		return httperror.BadRequest("Invalid query parameter: id (must be hexadecimal identifier)", err)
 	}
 
