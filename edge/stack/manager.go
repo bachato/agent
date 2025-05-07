@@ -159,7 +159,7 @@ func (manager *StackManager) buildDeployerService(assetsPath string, engineStatu
 	case EngineTypeDockerSwarm:
 		return exec.NewDockerSwarmStackService(assetsPath), nil
 	case EngineTypeKubernetes:
-		return exec.NewKubernetesDeployer(assetsPath, manager.kubeClient), nil
+		return exec.NewKubernetesDeployer(manager.kubeClient), nil
 	}
 
 	return nil, fmt.Errorf("engine status %d not supported", engineStatus)

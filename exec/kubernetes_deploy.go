@@ -4,75 +4,80 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path"
-	"runtime"
 
 	"github.com/pkg/errors"
 	"github.com/portainer/agent"
 	"github.com/portainer/agent/deployer"
 	"github.com/portainer/agent/kubernetes"
+	"github.com/portainer/portainer/pkg/libkubectl"
 )
 
 var _ deployer.Deployer = &KubernetesDeployer{}
 
 // KubernetesDeployer represents a service to deploy resources inside a Kubernetes environment.
 type KubernetesDeployer struct {
-	command    string
 	kubeClient *kubernetes.KubeClient
 }
 
 // NewKubernetesDeployer initializes a new KubernetesDeployer service.
-func NewKubernetesDeployer(binaryPath string, kubeClient *kubernetes.KubeClient) *KubernetesDeployer {
-	command := path.Join(binaryPath, "kubectl")
-	if runtime.GOOS == "windows" {
-		command = path.Join(binaryPath, "kubectl.exe")
-	}
-
+func NewKubernetesDeployer(kubeClient *kubernetes.KubeClient) *KubernetesDeployer {
 	return &KubernetesDeployer{
-		command:    command,
 		kubeClient: kubeClient,
 	}
 }
 
-func (deployer *KubernetesDeployer) operation(_ context.Context, _ string, filePaths []string, operation, namespace string) error {
-	if len(filePaths) == 0 {
-		return errors.New("missing file paths")
+func (deployer *KubernetesDeployer) operation(_ context.Context, _ string, manifests []string, operation, namespace string) error {
+	if len(manifests) == 0 {
+		return errors.New("missing manifests")
 	}
 
-	stackFilePath := filePaths[0]
-
-	args, err := buildArgs(&argOptions{
-		Namespace: namespace,
-	})
+	client, err := libkubectl.NewClient(&libkubectl.ClientAccess{
+		ServerUrl: "https://kubernetes.default.svc",
+	}, namespace, "", false)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "failed to create kubectl client")
 	}
 
-	args = append(args, operation, "-f", stackFilePath)
+	operations := map[string]func(context.Context, []string) (string, error){
+		"apply":           client.Apply,
+		"delete":          client.Delete,
+		"rollout-restart": client.RolloutRestart,
+	}
 
-	_, err = runCommandAndCaptureStdErr(deployer.command, args, nil)
-	return err
+	operationFunc, ok := operations[operation]
+	if !ok {
+		return errors.Errorf("unsupported operation: %s", operation)
+	}
+
+	output, err := operationFunc(context.Background(), manifests)
+	if err != nil {
+		return errors.Wrapf(err, "failed to execute kubectl %s command", operation)
+	}
+
+	fmt.Println(output)
+
+	return nil
 }
 
 // Deploy will deploy a Kubernetes manifest inside the default namespace
 // it will use kubectl to deploy the manifest.
 // kubectl uses in-cluster config.
-func (deployer *KubernetesDeployer) Deploy(ctx context.Context, name string, filePaths []string, options deployer.DeployOptions) error {
-	return deployer.operation(ctx, name, filePaths, "apply", options.Namespace)
+func (deployer *KubernetesDeployer) Deploy(ctx context.Context, name string, manifests []string, options deployer.DeployOptions) error {
+	return deployer.operation(ctx, name, manifests, "apply", options.Namespace)
 }
 
-func (deployer *KubernetesDeployer) Remove(ctx context.Context, name string, filePaths []string, options deployer.RemoveOptions) error {
-	return deployer.operation(ctx, name, filePaths, "delete", options.Namespace)
+func (deployer *KubernetesDeployer) Remove(ctx context.Context, name string, manifests []string, options deployer.RemoveOptions) error {
+	return deployer.operation(ctx, name, manifests, "delete", options.Namespace)
 }
 
 // Pull is a dummy method for Kube
-func (deployer *KubernetesDeployer) Pull(ctx context.Context, name string, filePaths []string, options deployer.PullOptions) error {
+func (deployer *KubernetesDeployer) Pull(ctx context.Context, name string, manifests []string, options deployer.PullOptions) error {
 	return nil
 }
 
 // Validate is a dummy method for Kubernetes manifest validation
 // https://portainer.atlassian.net/browse/EE-6292?focusedCommentId=29674
-func (deployer *KubernetesDeployer) Validate(ctx context.Context, name string, filePaths []string, options deployer.ValidateOptions) error {
+func (deployer *KubernetesDeployer) Validate(ctx context.Context, name string, manifests []string, options deployer.ValidateOptions) error {
 	return nil
 }
 
@@ -80,52 +85,6 @@ func (deployer *KubernetesDeployer) Validate(ctx context.Context, name string, f
 // it will use kubectl to deploy the manifest and receives a raw config.
 // kubectl uses in-cluster config.
 func (deployer *KubernetesDeployer) DeployRawConfig(token, config string, namespace string) ([]byte, error) {
-	args, err := buildArgs(&argOptions{
-		Namespace: namespace,
-		Token:     token,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	args = append(args, "apply", "-f", "-")
-
-	return runCommandAndCaptureStdErr(deployer.command, args, &cmdOpts{Input: config})
-}
-
-func (service *KubernetesDeployer) GetEdgeStacks(ctx context.Context) ([]agent.EdgeStack, error) {
-	return nil, nil
-}
-
-type argOptions struct {
-	Namespace string
-	Token     string
-}
-
-func buildArgs(opts *argOptions) ([]string, error) {
-	args := []string{}
-
-	if opts == nil {
-		return args, nil
-	}
-
-	if opts.Namespace != "" {
-		args = append(args, "--namespace", opts.Namespace)
-	}
-
-	if opts.Token != "" {
-		tokenArgs, err := buildTokenArgs(opts.Token)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed building token args")
-		}
-
-		args = append(args, tokenArgs...)
-	}
-
-	return args, nil
-}
-
-func buildTokenArgs(token string) ([]string, error) {
 	host := os.Getenv(agent.KubernetesServiceHost)
 	if host == "" {
 		return nil, fmt.Errorf("%s env var is not defined", agent.KubernetesServiceHost)
@@ -137,10 +96,22 @@ func buildTokenArgs(token string) ([]string, error) {
 	}
 
 	server := fmt.Sprintf("https://%s:%s", host, port)
+	client, err := libkubectl.NewClient(&libkubectl.ClientAccess{
+		Token:     token,
+		ServerUrl: server,
+	}, namespace, "", false)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create kubectl client")
+	}
 
-	return []string{
-		"--token", token,
-		"--server", server,
-		"--insecure-skip-tls-verify",
-	}, nil
+	_, err = client.Apply(context.Background(), []string{config})
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to execute kubectl apply command")
+	}
+
+	return nil, nil
+}
+
+func (service *KubernetesDeployer) GetEdgeStacks(ctx context.Context) ([]agent.EdgeStack, error) {
+	return nil, nil
 }

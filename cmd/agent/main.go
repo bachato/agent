@@ -163,7 +163,7 @@ func main() {
 			log.Fatal().Err(err).Msg("unable to create Kubernetes client")
 		}
 
-		kubernetesDeployer = exec.NewKubernetesDeployer(options.AssetsPath, kubeClient)
+		kubernetesDeployer = exec.NewKubernetesDeployer(kubeClient)
 
 		clusterService = cluster.NewClusterService(runtimeConfiguration)
 
