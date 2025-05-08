@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/portainer/agent"
@@ -141,6 +142,7 @@ func (manager *StackManager) processStack(stackID int, stackStatus client.StackS
 	stack.FileName = stackPayload.EntryFileName
 	stack.FileFolder = getStackFileFolder(stack)
 	stack.RollbackTo = stackPayload.RollbackTo
+	stack.EdgeUpdateID = stackPayload.EdgeUpdateID
 
 	if err := filesystem.DecodeDirEntries(stackPayload.DirEntries); err != nil {
 		return err
@@ -327,26 +329,20 @@ func (manager *StackManager) checkStackStatus(ctx context.Context, stackName str
 	case StatusAwaitingDeployedStatus:
 		requiredStatus = libstack.StatusRunning
 
-		if stack.EdgeUpdateID != 0 {
-			requiredStatus = libstack.StatusCompleted
-		}
-
 	case StatusDeployed:
-		// There is no need to wait for a change of state, just observe if it
-		// has happened already, the new timeout is just enough to get past the
-		// ctx.Done() check and run once.
-		var cancelFn func()
-		ctx, cancelFn = context.WithTimeout(ctx, 1*time.Second)
-		defer cancelFn()
+		if stack.EdgeUpdateID == 0 {
+			// There is no need to wait for a change of state, just observe if it
+			// has happened already, the new timeout is just enough to get past the
+			// ctx.Done() check and run once.
+			var cancelFn func()
+			ctx, cancelFn = context.WithTimeout(ctx, 1*time.Second)
+			defer cancelFn()
+		}
 
 		requiredStatus = libstack.StatusCompleted
 	}
 
-	status, statusMessage, err := manager.waitForStatus(ctx, stackName, requiredStatus, options)
-	if err != nil && stack.Status != StatusDeployed {
-		return err
-	}
-
+	status, statusMessage := manager.waitForStatus(ctx, stackName, requiredStatus, options)
 	if stack.Status != StatusDeployed {
 		log.Debug().
 			Int("stack_identifier", stack.ID).
@@ -358,8 +354,24 @@ func (manager *StackManager) checkStackStatus(ctx context.Context, stackName str
 			Msg("stack status")
 	}
 
+	// if the stack is an edge update, and the status message contains a context deadline exceeded error,
+	// the update takes longer than expected, and we need to ignore the status, and let it
+	// try again in the next status check.
+	if stack.EdgeUpdateID != 0 && strings.Contains(statusMessage, context.DeadlineExceeded.Error()) {
+		log.Debug().
+			Int("stack_identifier", stack.ID).
+			Str("stack_name", stackName).
+			Str("required_status", string(requiredStatus)).
+			Str("status", string(status)).
+			Str("status_message", statusMessage).
+			Int("edge_update_id", stack.EdgeUpdateID).
+			Msg("stack status timeout")
+
+		return nil
+	}
+
 	// Only report back the Completed status for already deployed stacks
-	if stack.Status == StatusDeployed {
+	if stack.Status == StatusDeployed && stack.EdgeUpdateID == 0 {
 		if status == libstack.StatusCompleted {
 			stack.Status = StatusCompleted
 			return manager.portainerClient.SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusCompleted, stack.RollbackTo, "")
@@ -389,16 +401,16 @@ func (manager *StackManager) checkStackStatus(ctx context.Context, stackName str
 	return nil
 }
 
-func (manager *StackManager) waitForStatus(ctx context.Context, stackName string, requiredStatus libstack.Status, options deployer.CheckStatusOptions) (libstack.Status, string, error) {
+func (manager *StackManager) waitForStatus(ctx context.Context, stackName string, requiredStatus libstack.Status, options deployer.CheckStatusOptions) (libstack.Status, string) {
 	ctx, cancel := context.WithTimeout(ctx, 1*time.Minute)
 	defer cancel()
 
 	result := manager.deployer.WaitForStatus(ctx, stackName, requiredStatus, options)
 	if result.ErrorMsg == "" {
-		return result.Status, "", nil
+		return result.Status, ""
 	}
 
-	return libstack.StatusError, result.ErrorMsg, nil
+	return libstack.StatusError, result.ErrorMsg
 }
 
 func (manager *StackManager) validateStackFile(ctx context.Context, stack *edgeStack, stackName, stackFileLocation string) error {

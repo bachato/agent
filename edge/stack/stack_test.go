@@ -3,6 +3,7 @@ package stack
 import (
 	"context"
 	"errors"
+	"github.com/portainer/portainer/pkg/libstack"
 	"testing"
 
 	"github.com/portainer/agent/deployer"
@@ -226,4 +227,170 @@ func TestStackManager_deployStack(t *testing.T) {
 		assert.Equal(t, StatusError, stack.Status)
 		assert.Equal(t, actionIdle, stack.Action)
 	})
+}
+
+func TestStackManager_checkStackStatus(t *testing.T) {
+	tests := []struct {
+		name                           string
+		edgeUpdateID                   int
+		stackStatus                    edgeStackStatus
+		expectedRequiredLibStackStatus libstack.Status
+		expectedWaitResult             libstack.WaitResult
+		expectedEdgeStackStatus        edgeStackStatus
+		expectedPortainerStatus        portainer.EdgeStackStatusType
+	}{
+		{
+			name:                           "EdgeStack StatusDeployed -> StatusCompleted (Completed)",
+			stackStatus:                    StatusDeployed,
+			expectedRequiredLibStackStatus: libstack.StatusCompleted,
+			expectedWaitResult: libstack.WaitResult{
+				Status: libstack.StatusCompleted,
+			},
+			expectedEdgeStackStatus: StatusCompleted,
+			expectedPortainerStatus: portainer.EdgeStackStatusCompleted,
+		},
+		{
+			name:                           "EdgeStack StatusDeployed -> StatusCompleted (Error)",
+			stackStatus:                    StatusDeployed,
+			expectedRequiredLibStackStatus: libstack.StatusCompleted,
+			expectedWaitResult: libstack.WaitResult{
+				Status:   libstack.StatusError,
+				ErrorMsg: "test " + context.DeadlineExceeded.Error(),
+			},
+			expectedEdgeStackStatus: StatusDeployed, // If an error occurs, we don't update the status
+			expectedPortainerStatus: -1,             // No update to Portainer
+		},
+		{
+			name:                           "EdgeStack StatusDeployed -> StatusError (context deadline exceeded)",
+			stackStatus:                    StatusDeployed,
+			expectedRequiredLibStackStatus: libstack.StatusCompleted,
+			expectedWaitResult: libstack.WaitResult{
+				Status:   libstack.StatusError,
+				ErrorMsg: "test " + context.DeadlineExceeded.Error(), // if the context deadline is exceeded, the status is not updated
+			},
+			expectedEdgeStackStatus: StatusDeployed,
+			expectedPortainerStatus: -1, // No update to Portainer
+		},
+		{
+			name:                           "EdgeStack StatusAwaitingDeployedStatus -> StatusDeployed (Running)",
+			stackStatus:                    StatusAwaitingDeployedStatus,
+			expectedRequiredLibStackStatus: libstack.StatusRunning,
+			expectedWaitResult: libstack.WaitResult{
+				Status: libstack.StatusRunning,
+			},
+			expectedEdgeStackStatus: StatusDeployed,
+			expectedPortainerStatus: portainer.EdgeStackStatusRunning,
+		},
+		{
+			name:                           "EdgeStack StatusAwaitingRemovedStatus -> StatusAwaitingCleanup (removed)",
+			stackStatus:                    StatusAwaitingRemovedStatus,
+			expectedRequiredLibStackStatus: libstack.StatusRemoved,
+			expectedWaitResult: libstack.WaitResult{
+				Status: libstack.StatusRemoved,
+			},
+			expectedEdgeStackStatus: StatusAwaitingCleanup,
+			expectedPortainerStatus: portainer.EdgeStackStatusRemoved,
+		},
+		{
+			name:                           "EdgeUpdate StatusDeployed -> StatusCompleted (StatusCompleted)",
+			edgeUpdateID:                   1,
+			stackStatus:                    StatusDeployed,
+			expectedRequiredLibStackStatus: libstack.StatusCompleted,
+			expectedWaitResult: libstack.WaitResult{
+				Status:   libstack.StatusCompleted,
+				ErrorMsg: "",
+			},
+			expectedEdgeStackStatus: StatusCompleted,
+			expectedPortainerStatus: portainer.EdgeStackStatusCompleted,
+		},
+		{
+			name:                           "EdgeUpdate StatusDeployed -> StatusError (context deadline exceeded)",
+			edgeUpdateID:                   1,
+			stackStatus:                    StatusDeployed,
+			expectedRequiredLibStackStatus: libstack.StatusCompleted,
+			expectedWaitResult: libstack.WaitResult{
+				Status:   libstack.StatusError,
+				ErrorMsg: "test " + context.DeadlineExceeded.Error(), // if the context deadline is exceeded, the status is not updated
+			},
+			expectedEdgeStackStatus: StatusDeployed,
+			expectedPortainerStatus: -1, // No update to Portainer
+		},
+		{
+			name:                           "EdgeUpdate StatusDeployed -> StatusError (error)",
+			edgeUpdateID:                   1,
+			stackStatus:                    StatusDeployed,
+			expectedRequiredLibStackStatus: libstack.StatusCompleted,
+			expectedWaitResult: libstack.WaitResult{
+				Status:   libstack.StatusError,
+				ErrorMsg: "test-error", // the edge update updater failed
+			},
+			expectedEdgeStackStatus: StatusError,
+			expectedPortainerStatus: portainer.EdgeStackStatusError,
+		},
+		{
+			name:                           "EdgeUpdate StatusAwaitingDeployedStatus -> StatusDeployed (Running)",
+			edgeUpdateID:                   1,
+			stackStatus:                    StatusAwaitingDeployedStatus,
+			expectedRequiredLibStackStatus: libstack.StatusRunning,
+			expectedWaitResult: libstack.WaitResult{
+				Status:   libstack.StatusRunning,
+				ErrorMsg: "",
+			},
+			expectedEdgeStackStatus: StatusDeployed,
+			expectedPortainerStatus: portainer.EdgeStackStatusRunning,
+		},
+		{
+			name:                           "EdgeUpdate StatusAwaitingRemovedStatus -> StatusAwaitingCleanup (removed)",
+			stackStatus:                    StatusAwaitingRemovedStatus,
+			expectedRequiredLibStackStatus: libstack.StatusRemoved,
+			expectedWaitResult: libstack.WaitResult{
+				Status: libstack.StatusRemoved,
+			},
+			expectedEdgeStackStatus: StatusAwaitingCleanup,
+			expectedPortainerStatus: portainer.EdgeStackStatusRemoved,
+		},
+		{
+			name:                           "StatusAwaitingDeployedStatus -> Unknown",
+			stackStatus:                    StatusAwaitingDeployedStatus,
+			expectedRequiredLibStackStatus: libstack.StatusRunning,
+			expectedWaitResult: libstack.WaitResult{
+				Status: libstack.StatusUnknown,
+			},
+			expectedEdgeStackStatus: StatusAwaitingDeployedStatus,
+			expectedPortainerStatus: -1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockDeployer := mocks.NewMockDeployer(ctrl)
+			mockPortainerClient := mocks.NewMockPortainerClient(ctrl)
+
+			manager := &StackManager{
+				deployer:        mockDeployer,
+				portainerClient: mockPortainerClient,
+			}
+			stack := &edgeStack{
+				Status: tt.stackStatus,
+				StackPayload: edge.StackPayload{
+					Name:         "edge-stack",
+					EdgeUpdateID: tt.edgeUpdateID,
+				},
+			}
+			ctx := context.Background()
+
+			mockDeployer.EXPECT().WaitForStatus(gomock.Any(), stack.Name, tt.expectedRequiredLibStackStatus, deployer.CheckStatusOptions{}).Return(tt.expectedWaitResult)
+			if tt.expectedPortainerStatus >= 0 {
+				mockPortainerClient.EXPECT().SetEdgeStackStatus(stack.ID, stack.Version, tt.expectedPortainerStatus, stack.RollbackTo, tt.expectedWaitResult.ErrorMsg).Return(nil)
+			}
+
+			err := manager.checkStackStatus(ctx, stack.Name, stack, deployer.CheckStatusOptions{})
+
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectedEdgeStackStatus, stack.Status)
+		})
+	}
 }
