@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"maps"
 	"net/http"
 	"slices"
 	"sort"
@@ -20,6 +21,7 @@ import (
 	portainer "github.com/portainer/portainer/api"
 	"github.com/portainer/portainer/api/edge"
 
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/klauspost/compress/gzhttp/writer/gzkp"
@@ -49,6 +51,7 @@ type PortainerAsyncClient struct {
 	snapshotRetried   bool
 
 	stackLogCollectionQueue []LogCommandData
+	liveLogCollectors       map[string]*LiveLogCollector
 
 	dockerSnapshotter DockerSnapshotter
 }
@@ -69,7 +72,9 @@ func NewPortainerAsyncClient(
 	for _, o := range opts {
 		o(clientOpts)
 	}
+
 	initialCommandTimestamp := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+
 	return &PortainerAsyncClient{
 		version:                 clientOpts.version,
 		serverAddress:           serverAddress,
@@ -82,6 +87,7 @@ func NewPortainerAsyncClient(
 		commandTimestamp:        &initialCommandTimestamp,
 		metaFields:              metaFields,
 		dockerSnapshotter:       clientOpts.dockerSnapshotter,
+		liveLogCollectors:       make(map[string]*LiveLogCollector),
 	}
 }
 
@@ -111,6 +117,7 @@ type EndpointLog struct {
 type EdgeStackLog struct {
 	EdgeStackID portainer.EdgeStackID `json:"edgeStackID,omitempty"`
 	Logs        []EndpointLog         `json:"logs,omitempty"`
+	Append      bool                  `json:"append,omitempty"`
 }
 
 type snapshot struct {
@@ -529,35 +536,26 @@ func (client *PortainerAsyncClient) createKubernetesSnapshot(payload *AsyncReque
 }
 
 func (client *PortainerAsyncClient) getEdgeStackLogs(payload *AsyncRequest) {
+	// Running live log collection
+	for containerID, logCollector := range client.liveLogCollectors {
+		client.collectAvailableLogs(payload, logCollector, containerID, false)
+	}
+
+	// New log collection
 	for _, logCmd := range client.stackLogCollectionQueue {
 		var csIDs []string
 
 		// Whole edge stack
 		if logCmd.ContainerID == "" {
-			cs, err := docker.GetContainersWithLabel("com.docker.compose.project=edge_" + logCmd.EdgeStackName)
-			if err != nil {
-				log.Warn().
-					Str("stack", logCmd.EdgeStackName).
-					Err(err).
-					Msg("could not retrieve containers for stack")
-
-				continue
-			}
-
-			cs2, err := docker.GetContainersWithLabel("com.docker.stack.namespace=edge_" + logCmd.EdgeStackName)
-			if err != nil {
-				log.Warn().Err(err).Msg("could not retrieve containers for stack")
-
-				continue
-			}
-
-			cs = append(cs, cs2...)
+			cs := getContainersFromEdgeStack(logCmd.EdgeStackName)
 
 			for _, c := range cs {
 				csIDs = append(csIDs, c.ID)
 			}
 		} else { // Just one container
-			csIDs = []string{logCmd.ContainerID}
+			client.startLiveLogCollection(payload, logCmd.ContainerID, logCmd.Since, logCmd.Until, strconv.Itoa(logCmd.Tail))
+
+			continue
 		}
 
 		edgeStackLog := EdgeStackLog{EdgeStackID: logCmd.EdgeStackID}
@@ -566,8 +564,8 @@ func (client *PortainerAsyncClient) getEdgeStackLogs(payload *AsyncRequest) {
 			stdOut, stdErr, err := docker.GetContainerLogs(cID, strconv.Itoa(logCmd.Tail), logCmd.Since, logCmd.Until)
 			if err != nil {
 				log.Warn().
-					Str("container_id", cID).
 					Err(err).
+					Str("container_id", cID).
 					Msg("could not retrieve logs for container")
 
 				continue
@@ -584,6 +582,47 @@ func (client *PortainerAsyncClient) getEdgeStackLogs(payload *AsyncRequest) {
 			payload.Snapshot.StackLogs = append(payload.Snapshot.StackLogs, edgeStackLog)
 		}
 	}
+}
+
+func (client *PortainerAsyncClient) collectAvailableLogs(payload *AsyncRequest, logCollector *LiveLogCollector, containerID string, firstTime bool) {
+	stdOut, stdErr, done := logCollector.Collect()
+
+	if done {
+		log.Debug().Str("container_id", containerID).Msg("removing live log collector")
+
+		delete(client.liveLogCollectors, containerID)
+	}
+
+	payload.Snapshot.StackLogs = append(payload.Snapshot.StackLogs, EdgeStackLog{
+		Logs: []EndpointLog{
+			{
+				DockerContainerID: containerID,
+				StdOut:            string(stdOut),
+				StdErr:            string(stdErr),
+			},
+		},
+		Append: !firstTime,
+	})
+}
+
+func (client *PortainerAsyncClient) startLiveLogCollection(payload *AsyncRequest, containerID, since, until, tail string) {
+	log.Debug().
+		Str("container_id", containerID).
+		Str("since", since).
+		Str("until", until).
+		Str("tail", tail).
+		Msg("starting new live log collector")
+
+	logCollector, err := StartNewLiveLogCollector(containerID, since, until, tail)
+	if err != nil {
+		log.Warn().Err(err).Str("container_id", containerID).Msg("could not retrieve logs for container")
+
+		return
+	}
+
+	client.collectAvailableLogs(payload, logCollector, containerID, true)
+
+	client.liveLogCollectors[containerID] = logCollector
 }
 
 func (client *PortainerAsyncClient) rotateSnapshots(currentSnapshot snapshot, asyncResponse *AsyncResponse) {
@@ -608,9 +647,7 @@ func (client *PortainerAsyncClient) rotateSnapshots(currentSnapshot snapshot, as
 		client.lastSnapshot.StackStatusArray = make(map[portainer.EdgeStackID][]portainer.EdgeStackDeploymentStatus)
 	}
 
-	for k, v := range client.nextSnapshot.StackStatusArray {
-		client.lastSnapshot.StackStatusArray[k] = v
-	}
+	maps.Copy(client.lastSnapshot.StackStatusArray, client.nextSnapshot.StackStatusArray)
 
 	client.nextSnapshot.StackStatusArray = nil
 	client.nextSnapshot.JobsStatus = nil
@@ -651,4 +688,18 @@ func optimizeDockerSnapshot(s *portainer.DockerSnapshot) {
 			return s.SnapshotRaw.Containers[k].Mounts[i].Destination < s.SnapshotRaw.Containers[k].Mounts[j].Destination
 		})
 	}
+}
+
+func getContainersFromEdgeStack(edgeStackName string) []types.Container {
+	cs, err := docker.GetContainersWithLabel("com.docker.compose.project=edge_" + edgeStackName)
+	if err != nil {
+		log.Warn().Err(err).Str("stack", edgeStackName).Msg("could not retrieve containers for stack")
+	}
+
+	cs2, err := docker.GetContainersWithLabel("com.docker.stack.namespace=edge_" + edgeStackName)
+	if err != nil {
+		log.Warn().Err(err).Msg("could not retrieve containers for stack")
+	}
+
+	return append(cs, cs2...)
 }
