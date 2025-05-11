@@ -1,16 +1,27 @@
 package stack
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"errors"
-	"github.com/portainer/portainer/pkg/libstack"
+	"log"
+	"os/exec"
+	"strconv"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/portainer/agent/deployer"
+	"github.com/portainer/agent/edge/client"
 	"github.com/portainer/agent/internals/mocks"
 	portainer "github.com/portainer/portainer/api"
 	"github.com/portainer/portainer/api/edge"
+	"github.com/portainer/portainer/api/filesystem"
+	"github.com/portainer/portainer/pkg/libstack"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -393,4 +404,141 @@ func TestStackManager_checkStackStatus(t *testing.T) {
 			assert.Equal(t, tt.expectedEdgeStackStatus, stack.Status)
 		})
 	}
+}
+
+type mockPortainerClient struct {
+	client.PortainerClient
+	t *testing.T
+}
+
+func (m *mockPortainerClient) SetEdgeStackStatus(
+	edgeStackID,
+	version int,
+	edgeStackStatus portainer.EdgeStackStatusType,
+	rollbackTo *int,
+	errMessage string,
+) error {
+	if edgeStackStatus == portainer.EdgeStackStatusError {
+		m.t.Fatal(errMessage)
+	}
+	return nil
+}
+
+func TestStackManager_performActionOnStack(t *testing.T) {
+	zerolog.SetGlobalLevel(zerolog.ErrorLevel)
+
+	cli := &mockPortainerClient{t: t}
+
+	assetsPath := ""
+	edgeID := "test-edge"
+
+	manager := NewStackManager(cli, assetsPath, nil, edgeID, nil)
+
+	if err := manager.SetEngineType(EngineTypeDockerStandalone); err != nil {
+		t.Fatal("setting manager engine type: ", err)
+	}
+
+	dir := t.TempDir()
+
+	dirEntries := []filesystem.DirEntry{
+		{
+			Name: "docker-compose.yml",
+			Content: `services:
+  test:
+    image: busybox:latest
+    stop_signal: SIGKILL
+    command: tail -f /dev/null
+    environment:
+      - OTHER_VAR=$OTHER_VAR
+      - PORTAINER_HOST_VAR=$PORTAINER_HOST_VAR
+      - HOST_VAR=$HOST_VAR`,
+			IsFile:      true,
+			Permissions: 0644,
+		},
+	}
+
+	if err := filesystem.PersistDir(dir, dirEntries); err != nil {
+		t.Fatal("Failed to create compose dir: ", err)
+	}
+
+	stack := &edgeStack{
+		StackPayload: edge.StackPayload{
+			Version:             1,
+			ID:                  1,
+			Name:                "test-env-vars",
+			DirEntries:          dirEntries,
+			EntryFileName:       "docker-compose.yml",
+			SupportRelativePath: false,
+			FilesystemPath:      dir,
+			EnvVars: []portainer.Pair{{
+				Name:  "OTHER_VAR",
+				Value: "test",
+			}},
+			DeployerOptionsPayload: edge.DeployerOptionsPayload{},
+		},
+		FileFolder:   dir,
+		FileName:     "docker-compose.yml",
+		Status:       StatusPending,
+		Action:       actionDeploy,
+		PullCount:    0,
+		PullFinished: false,
+		DeployCount:  0,
+		FirstAction:  time.Now().Add(time.Duration(-10) * time.Minute),
+		LastAction:   time.Now().Add(time.Duration(-10) * time.Minute),
+	}
+
+	manager.stacks[edgeStackID(stack.ID)] = stack
+
+	t.Setenv("HOST_VAR", "something")
+	t.Setenv("PORTAINER_HOST_VAR", "hello")
+
+	manager.performActionOnStack()
+
+	t.Cleanup(func() {
+		stack.Status = StatusPending
+		stack.Action = actionDelete
+		stack.LastAction = time.Now().Add(time.Duration(-10) * time.Minute)
+		manager.performActionOnStack()
+	})
+
+	containerName := "edge_" + stack.Name + "-test-" + strconv.Itoa(stack.Version)
+	require.True(t, containerExists(containerName))
+
+	env := getContainerEnv(containerName)
+
+	require.Equal(t, "", env["HOST_VAR"], "HOST_VAR env var should not be set in created container")
+	require.Equal(t, "hello", env["PORTAINER_HOST_VAR"], "PORTAINER_HOST_VAR env var should be set in created container")
+	require.Equal(t, "test", env["OTHER_VAR"], "OTHER_VAR env var should be set in created container")
+}
+
+func containerExists(containerName string) bool {
+	cmd := exec.Command("docker", "ps", "-a", "-f", "name="+containerName)
+
+	out, err := cmd.Output()
+	if err != nil {
+		log.Fatalf("failed to list containers: %s", err)
+	}
+
+	return strings.Contains(string(out), containerName)
+}
+
+func getContainerEnv(containerName string) map[string]string {
+	cmd := exec.Command("docker", "exec", containerName, "env")
+
+	out, err := cmd.Output()
+	if err != nil {
+		log.Fatalf("failed to list containers: %s", err)
+	}
+
+	vars := map[string]string{}
+
+	scanner := bufio.NewScanner(bytes.NewReader(out))
+	for scanner.Scan() {
+		k, v, found := strings.Cut(scanner.Text(), "=")
+		if found {
+			vars[k] = v
+		}
+	}
+
+	return vars
 }
