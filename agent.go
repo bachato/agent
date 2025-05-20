@@ -65,8 +65,9 @@ type (
 	}
 
 	EdgeStack struct {
-		ID   int
-		Name string
+		ID       int
+		Name     string
+		ExitCode int
 	}
 
 	EdgeMetaFields struct {

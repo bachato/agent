@@ -511,6 +511,87 @@ func TestStackManager_performActionOnStack(t *testing.T) {
 	require.Equal(t, "test", env["OTHER_VAR"], "OTHER_VAR env var should be set in created container")
 }
 
+func TestStackManager_performActionOnStack_EdgeUpdateScenarios(t *testing.T) {
+	zerolog.SetGlobalLevel(zerolog.ErrorLevel)
+
+	tests := []struct {
+		name            string
+		stack           *edgeStack
+		waitResult      libstack.WaitResult
+		expectStatus    edgeStackStatus
+		expectSetStatus bool
+		expectErrorMsg  string
+	}{
+		{
+			name: "Timeout on running edge update should not change status",
+			stack: &edgeStack{
+				StackPayload: edge.StackPayload{
+					ID:           1,
+					Name:         "test",
+					EdgeUpdateID: 1,
+				},
+				Status: StatusDeployed,
+				Action: actionIdle,
+			},
+			waitResult: libstack.WaitResult{
+				Status:   libstack.StatusError,
+				ErrorMsg: context.DeadlineExceeded.Error(),
+			},
+			expectStatus:    StatusDeployed,
+			expectSetStatus: false,
+		},
+		{
+			name: "Failed edge update should set error status to prevent stack from being redeployed",
+			stack: &edgeStack{
+				StackPayload: edge.StackPayload{
+					ID:           1,
+					Name:         "test",
+					EdgeUpdateID: 1,
+				},
+				EdgeUpdateFailed: true,
+				Status:           StatusPending,
+				Action:           actionDeploy,
+			},
+			waitResult: libstack.WaitResult{
+				Status:   libstack.StatusError,
+				ErrorMsg: "edge update failed",
+			},
+			expectStatus:    StatusError,
+			expectSetStatus: true,
+			expectErrorMsg:  "edge update failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockDeployer := mocks.NewMockDeployer(ctrl)
+			mockDeployer.EXPECT().
+				WaitForStatus(gomock.Any(), "edge_test", libstack.StatusCompleted, gomock.AssignableToTypeOf(deployer.CheckStatusOptions{})).
+				Return(tt.waitResult)
+
+			mockClient := mocks.NewMockPortainerClient(ctrl)
+
+			if tt.expectSetStatus {
+				mockClient.EXPECT().
+					SetEdgeStackStatus(tt.stack.ID, tt.stack.Version, portainer.EdgeStackStatusError, tt.stack.RollbackTo, tt.expectErrorMsg).
+					Return(nil)
+			}
+
+			manager := NewStackManager(mockClient, "", nil, "test", nil)
+			manager.deployer = mockDeployer
+			manager.stacks[edgeStackID(tt.stack.ID)] = tt.stack
+
+			manager.performActionOnStack()
+
+			updated := manager.stacks[edgeStackID(tt.stack.ID)]
+			assert.Equal(t, tt.expectStatus, updated.Status)
+		})
+	}
+}
+
 func containerExists(containerName string) bool {
 	cmd := exec.Command("docker", "ps", "-a", "-f", "name="+containerName)
 

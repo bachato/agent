@@ -3,6 +3,7 @@ package stack
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/portainer/agent"
@@ -138,13 +139,16 @@ func (manager *StackManager) LoadExistingEdgeStacks(ctx context.Context) error {
 			continue
 		}
 
+		edgeUpdateFailed := s.ExitCode != 0 && strings.HasPrefix(s.Name, "edge-update-schedule-")
+
 		manager.stacks[edgeStackID(s.ID)] = &edgeStack{
 			StackPayload: edge.StackPayload{
 				ID:   s.ID,
 				Name: s.Name,
 			},
-			Action: actionIdle,
-			Status: StatusPending,
+			Action:           actionIdle,
+			Status:           StatusPending,
+			EdgeUpdateFailed: edgeUpdateFailed,
 		}
 	}
 	manager.mu.Unlock()

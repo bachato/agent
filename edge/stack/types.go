@@ -24,8 +24,9 @@ type (
 		PullFinished bool
 		DeployCount  int
 
-		FirstAction time.Time
-		LastAction  time.Time
+		FirstAction      time.Time
+		LastAction       time.Time
+		EdgeUpdateFailed bool
 	}
 )
 
