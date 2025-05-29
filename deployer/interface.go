@@ -33,8 +33,9 @@ type (
 		DeployerBaseOptions
 		// compose up --remove-orphans
 		// stack up --prune
-		Prune       bool
-		EdgeStackID portainer.EdgeStackID
+		Prune         bool
+		EdgeStackID   portainer.EdgeStackID
+		ForceRecreate bool
 	}
 
 	RemoveOptions struct {

@@ -36,6 +36,7 @@ func (service *DockerComposeStackService) Deploy(ctx context.Context, name strin
 			Env:         options.Env,
 			Registries:  registryCredsToAuthConfigs(options.Registries),
 		},
+		ForceRecreate: options.ForceRecreate,
 		RemoveOrphans: options.Prune,
 		EdgeStackID:   options.EdgeStackID,
 	})
