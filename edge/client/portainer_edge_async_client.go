@@ -105,7 +105,7 @@ type AsyncRequest struct {
 	CommandTimestamp *time.Time           `json:"commandTimestamp,omitempty"`
 	Snapshot         *snapshot            `json:"snapshot,omitempty"`
 	EndpointId       portainer.EndpointID `json:"endpointId,omitempty"`
-	MetaFields       *MetaFields          `json:"metaFields"`
+	MetaFields       *MetaFields          `json:"metaFields,omitempty"`
 }
 
 type EndpointLog struct {
@@ -291,6 +291,10 @@ func gzipCompress(data []byte) (*bytes.Buffer, error) {
 		return nil, err
 	}
 
+	if len(data) < buf.Len() {
+		return nil, fmt.Errorf("compressed data is larger than original data")
+	}
+
 	return buf, nil
 }
 
@@ -300,11 +304,14 @@ func (client *PortainerAsyncClient) executeAsyncRequest(payload AsyncRequest, po
 		return nil, err
 	}
 
-	var buf *bytes.Buffer
-	if payload.Snapshot == nil {
-		buf = bytes.NewBuffer(data)
-	} else if buf, err = gzipCompress(data); err != nil {
-		return nil, err
+	gzipped := false
+	buf := bytes.NewBuffer(data)
+
+	if payload.Snapshot != nil {
+		if gzBuf, err := gzipCompress(data); err == nil {
+			buf = gzBuf
+			gzipped = true
+		}
 	}
 
 	req, err := http.NewRequest("POST", pollURL, buf)
@@ -312,7 +319,7 @@ func (client *PortainerAsyncClient) executeAsyncRequest(payload AsyncRequest, po
 		return nil, err
 	}
 
-	if payload.Snapshot != nil {
+	if gzipped {
 		req.Header.Set("Content-Encoding", "gzip")
 	}
 
