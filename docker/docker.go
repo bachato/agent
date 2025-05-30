@@ -7,8 +7,7 @@ import (
 
 	"github.com/portainer/agent"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/network"
+	dockernetwork "github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/system"
 	"github.com/docker/docker/client"
 	"github.com/rs/zerolog/log"
@@ -182,16 +181,16 @@ func withCli(callback func(cli *client.Client) error) error {
 }
 
 type networkInfo struct {
-	resource types.NetworkResource
-	settings *network.EndpointSettings
+	resource dockernetwork.Inspect
+	settings *dockernetwork.EndpointSettings
 	name     string
 }
 
-func fetchNetworkInfo(cli *client.Client, networkSettings map[string]*network.EndpointSettings) ([]networkInfo, error) {
+func fetchNetworkInfo(cli *client.Client, networkSettings map[string]*dockernetwork.EndpointSettings) ([]networkInfo, error) {
 	networks := []networkInfo{}
 
 	for networkName, network := range networkSettings {
-		networkInspect, err := cli.NetworkInspect(context.Background(), network.NetworkID, types.NetworkInspectOptions{})
+		networkInspect, err := cli.NetworkInspect(context.Background(), network.NetworkID, dockernetwork.InspectOptions{})
 		if err != nil {
 			return nil, err
 		}
