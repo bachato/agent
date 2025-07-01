@@ -6,6 +6,7 @@ WORKDIR /app
 COPY dist/agent /app/
 COPY dist/docker /app/
 COPY dist/docker-credential-portainer /app/
+COPY dist/healthy /app/
 
 COPY static /app/static
 COPY config $HOME/.docker/

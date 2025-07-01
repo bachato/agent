@@ -204,9 +204,8 @@ func (manager *StackManager) performActionOnStack() {
 	stackName := fmt.Sprintf("edge_%s", stack.Name)
 	stackFileLocation := fmt.Sprintf("%s/%s", stack.FileFolder, stack.FileName)
 
-	// When the edge update fails after the old agent container was stopped, and portainer-updater compensates by restarting the old agent container,
-	// this logic ensures that the stack is marked as failed and avoids the stack to be deployed again.
-	// Note, if the action is delete, the stack is about to be removed, and should not end up in this logic.
+	// When the edge update fails after the old agent container was stopped, and portainer-updater compensates by restarting the old agent container.
+	// This logic ensures that the stack is marked as failed and avoids the stack to be deployed again.
 	if stack.EdgeUpdateID > 0 && stack.EdgeUpdateFailed && stack.Action != actionDelete {
 		log.Debug().
 			Str("name", stackName).
@@ -215,7 +214,7 @@ func (manager *StackManager) performActionOnStack() {
 		// in the next status check.
 		stack.Status = StatusDeployed
 	}
-
+	
 	manager.mu.Unlock()
 
 	log.Debug().Str("name", stackName).Str("status", stack.Status.String()).Str("action", stack.Action.String()).Msg("evaluating stack")

@@ -180,12 +180,24 @@ func (service *PollService) pollAsync(doSnapshot, doCommand bool) error {
 		flags = append(flags, "command")
 	}
 
+	if service.firstPoll {
+		ctx, cancelFn := context.WithTimeout(context.Background(), time.Minute)
+		defer cancelFn()
+
+		if err := service.edgeStackManager.LoadExistingPortainerUpdaterEdgeStack(ctx); err == nil {
+			service.firstPoll = false
+		} else {
+			log.Warn().Err(err).Msg("failed to load existing portainer updater edge stack")
+		}
+	}
+
 	status, err := service.portainerClient.GetEnvironmentStatus(flags...)
 	if err != nil {
 		var nonOkError *client.NonOkResponseError
 		if errors.As(err, &nonOkError) {
 			service.edgeManager.SetEndpointID(globalKeyInUse)
 			service.edgeStackManager.ResetStacks()
+			service.firstPoll = false
 		}
 
 		return err

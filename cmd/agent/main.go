@@ -15,6 +15,7 @@ import (
 	"github.com/portainer/agent/docker"
 	"github.com/portainer/agent/edge"
 	"github.com/portainer/agent/edge/aws"
+	"github.com/portainer/agent/edge/health"
 	httpEdge "github.com/portainer/agent/edge/http"
 	"github.com/portainer/agent/edge/registry"
 	"github.com/portainer/agent/exec"
@@ -37,6 +38,8 @@ func init() {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnixNano
 
 	log.Logger = log.Logger.With().Caller().Stack().Logger()
+	// Reset the health status to unhealthy at startup, to avoid false positives for health checks
+	_ = health.SetUnHealthy()
 }
 
 func main() {
@@ -108,7 +111,8 @@ func main() {
 		}
 
 		if containerPlatform == agent.PlatformDocker && options.EdgeMetaFields.UpdateID != 0 {
-			updaterCleaner = updates.NewDockerUpdaterCleaner(ctx, options.EdgeMetaFields.UpdateID)
+			updates.SetUpdateID(options.EdgeMetaFields.UpdateID)
+			updaterCleaner = updates.NewDockerUpdaterCleaner(updates.UpdateID())
 		}
 
 		if containerPlatform == agent.PlatformDocker && clusterMode {

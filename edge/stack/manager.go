@@ -3,6 +3,7 @@ package stack
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -28,6 +29,8 @@ const (
 	// Deprecated
 	EngineTypeNomad
 )
+
+const edgeUpdateStackNamePrefix = "edge-update-schedule-"
 
 // StackManager represents a service for managing Edge stacks
 type StackManager struct {
@@ -139,7 +142,7 @@ func (manager *StackManager) LoadExistingEdgeStacks(ctx context.Context) error {
 			continue
 		}
 
-		edgeUpdateFailed := s.ExitCode != 0 && strings.HasPrefix(s.Name, "edge-update-schedule-")
+		edgeUpdateFailed := s.ExitCode != 0 && strings.HasPrefix(s.Name, edgeUpdateStackNamePrefix)
 
 		manager.stacks[edgeStackID(s.ID)] = &edgeStack{
 			StackPayload: edge.StackPayload{
@@ -152,6 +155,43 @@ func (manager *StackManager) LoadExistingEdgeStacks(ctx context.Context) error {
 		}
 	}
 	manager.mu.Unlock()
+
+	return nil
+}
+
+func (manager *StackManager) LoadExistingPortainerUpdaterEdgeStack(ctx context.Context) error {
+	// Load the Portainer Updater Edge Stack if it exists
+	edgeStacks, err := manager.deployer.GetEdgeStacks(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, s := range edgeStacks {
+		edgeUpdateIDString, isPortainerUpdaterEdgeStack := strings.CutPrefix(s.Name, edgeUpdateStackNamePrefix)
+		if isPortainerUpdaterEdgeStack {
+			edgeUpdateID, err := strconv.Atoi(edgeUpdateIDString)
+			if err != nil {
+				log.Error().Err(err).Msgf("failed to parse edge update ID from stack name %s", s.Name)
+				continue
+			}
+
+			manager.mu.Lock()
+			manager.stacks[edgeStackID(s.ID)] = &edgeStack{
+				StackPayload: edge.StackPayload{
+					ID:           s.ID,
+					Name:         s.Name,
+					EdgeUpdateID: edgeUpdateID,
+				},
+				Action:           actionIdle,
+				Status:           StatusPending,
+				EdgeUpdateFailed: s.ExitCode != 0,
+			}
+			manager.mu.Unlock()
+			log.Debug().Msg("successfully loaded portainer-updater edge stack")
+
+			return nil
+		}
+	}
 
 	return nil
 }

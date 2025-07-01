@@ -9,17 +9,19 @@ GOTESTSUM=go run gotest.tools/gotestsum@latest
 ifeq ("$(PLATFORM)", "windows")
 agent=agent.exe
 credential-helper=docker-credential-portainer.exe
+healthy=healthy.exe
 else
 agent=agent
 credential-helper=docker-credential-portainer
+healthy=healthy
 endif
 
 .DEFAULT_GOAL := help
-.PHONY: agent credential-helper download-binaries clean help
+.PHONY: agent credential-helper healthy download-binaries clean help
 
 ##@ Building
 
-all: tidy credential-helper download-binaries mock agent ## Build everything
+all: tidy credential-helper healthy download-binaries mock agent ## Build everything
 
 agent: ## Build the agent
 	@echo "Building Portainer agent..."
@@ -32,6 +34,15 @@ credential-helper: ## Build the credential helper (used by edge private registri
 		CGO_ENABLED=0 GOOS=$(PLATFORM) GOARCH=$(ARCH) go build -trimpath --installsuffix cgo --ldflags "-s" -o ../../dist/$(credential-helper); \
 	else \
 		echo "Credential helper already exists, skipping build."; \
+	fi
+
+healthy: ## Build the healthy binary
+	@if [ ! -f dist/$(healthy) ]; then \
+		echo "Building healthy..."; \
+		cd cmd/healthy && \
+		CGO_ENABLED=0 GOOS=$(PLATFORM) GOARCH=$(ARCH) go build -trimpath --installsuffix cgo --ldflags "-s" -o ../../dist/$(healthy); \
+	else \
+		echo "healthy already exists, skipping build."; \
 	fi
 
 download-binaries: ## Download dependant binaries

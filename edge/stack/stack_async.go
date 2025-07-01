@@ -103,6 +103,7 @@ func (manager *StackManager) buildDeployerParams(stackPayload edge.StackPayload,
 	stack.FileFolder = getStackFileFolder(stack)
 	stack.EnvVars = append(stackPayload.EnvVars, edgeIdPair)
 	stack.Namespace = stackPayload.Namespace
+	stack.EdgeUpdateID = stackPayload.EdgeUpdateID
 
 	if err := filesystem.DecodeDirEntries(stackPayload.DirEntries); err != nil {
 		return err

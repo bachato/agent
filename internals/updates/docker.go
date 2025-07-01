@@ -7,26 +7,25 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
+
+	"github.com/portainer/agent/docker"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
-	dockercontainer "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
-	"github.com/portainer/agent/docker"
 	"github.com/rs/zerolog/log"
 )
+
+var atomicUpdateID atomic.Int32
 
 type DockerUpdaterCleaner struct {
 	updateID int
 }
 
-func NewDockerUpdaterCleaner(ctx context.Context, updateID int) *DockerUpdaterCleaner {
-	if err := updateAgentInfoIfNeeds(ctx, updateID); err != nil {
-		log.Warn().Err(err).
-			Str("context", " UpdateAgentInfoIfNeeds").
-			Msg("UpdatedAgent fails to update the agents information")
-	}
+func NewDockerUpdaterCleaner(updateID int) *DockerUpdaterCleaner {
 	return &DockerUpdaterCleaner{
 		updateID: updateID,
 	}
@@ -78,6 +77,7 @@ func (du *DockerUpdaterCleaner) Clean(ctx context.Context) error {
 	if foundRunningContainer {
 		return errors.New("found running updater container. Retry after 30 seconds")
 	}
+
 	return nil
 }
 
@@ -85,14 +85,43 @@ func (du *DockerUpdaterCleaner) UpdateID() int {
 	return du.updateID
 }
 
-func updateAgentInfoIfNeeds(ctx context.Context, updateID int) error {
+func UpdateID() int {
+	return int(atomicUpdateID.Load())
+}
+
+func SetUpdateID(id int) {
+	atomicUpdateID.Store(int32(id))
+}
+
+var agentUpdateCleanupOnce sync.Once
+
+func AgentUpdateCleanupOnce(ctx context.Context) {
+	agentUpdateCleanupOnce.Do(func() {
+		updateID := UpdateID()
+		if err := AgentUpdateCleanup(ctx, updateID); err != nil {
+			log.Warn().Err(err).
+				Int("updateID", updateID).
+				Msg("Failed to update agent info")
+		} else {
+			log.Info().
+				Int("updateID", updateID).
+				Msg("Agent info updated successfully")
+		}
+	})
+}
+
+func AgentUpdateCleanup(ctx context.Context, updateID int) error {
+	if updateID == 0 {
+		return nil
+	}
+
 	cli, err := docker.NewClient()
 	if err != nil {
 		return err
 	}
 	defer cli.Close()
 
-	containers, err := getAgentContainerCandicates(ctx, cli)
+	containers, err := getAgentContainerCandidates(ctx, cli)
 	if err != nil {
 		return fmt.Errorf("unable to list containers. Error: %w", err)
 	}
@@ -102,8 +131,8 @@ func updateAgentInfoIfNeeds(ctx context.Context, updateID int) error {
 		newAgentContainer *types.Container
 		oldContainerName  string
 	)
-	for i, container := range containers {
-		if container.Labels != nil && container.Labels["io.portainer.update.scheduleId"] == strconv.Itoa(updateID) {
+	for i, cont := range containers {
+		if cont.Labels != nil && cont.Labels["io.portainer.update.scheduleId"] == strconv.Itoa(updateID) {
 			newAgentContainer = containers[i]
 			continue
 		}
@@ -176,7 +205,7 @@ func tryRemoveOldContainer(ctx context.Context, dockerCli *client.Client, oldCon
 	return dockerCli.ContainerRemove(ctx, oldContainerId, container.RemoveOptions{Force: true})
 }
 
-func getAgentContainerCandicates(ctx context.Context, cli *client.Client) ([]*types.Container, error) {
+func getAgentContainerCandidates(ctx context.Context, cli *client.Client) ([]*types.Container, error) {
 	containers, err := cli.ContainerList(ctx, container.ListOptions{All: true})
 	if err != nil {
 		return nil, fmt.Errorf("unable to list containers. Error: %w", err)
@@ -185,9 +214,9 @@ func getAgentContainerCandicates(ctx context.Context, cli *client.Client) ([]*ty
 	uniqueContainers := map[string]*types.Container{}
 	// Filter by label
 	possibleLabel := "io.portainer.agent"
-	for i, container := range containers {
-		if container.Labels != nil && container.Labels[possibleLabel] == "true" {
-			uniqueContainers[container.ID] = &containers[i]
+	for i, cont := range containers {
+		if cont.Labels != nil && cont.Labels[possibleLabel] == "true" {
+			uniqueContainers[cont.ID] = &containers[i]
 		}
 	}
 
@@ -203,8 +232,8 @@ func getAgentContainerCandicates(ctx context.Context, cli *client.Client) ([]*ty
 
 	// If filter by label and image failed, filter by logs
 	possibleLog := "Starting Agent API server"
-	for i, container := range containers {
-		logs, err := cli.ContainerLogs(ctx, container.ID, dockercontainer.LogsOptions{
+	for i, cont := range containers {
+		logs, err := cli.ContainerLogs(ctx, cont.ID, container.LogsOptions{
 			ShowStdout: true,
 			ShowStderr: false,
 		})
@@ -215,7 +244,7 @@ func getAgentContainerCandicates(ctx context.Context, cli *client.Client) ([]*ty
 		scanner := bufio.NewScanner(logs)
 		for scanner.Scan() {
 			if strings.Contains(scanner.Text(), possibleLog) {
-				uniqueContainers[container.ID] = &containers[i]
+				uniqueContainers[cont.ID] = &containers[i]
 			}
 		}
 
@@ -224,9 +253,9 @@ func getAgentContainerCandicates(ctx context.Context, cli *client.Client) ([]*ty
 		}
 	}
 
-	containerCandicates := []*types.Container{}
-	for _, container := range uniqueContainers {
-		containerCandicates = append(containerCandicates, container)
+	containerCandidates := []*types.Container{}
+	for _, cont := range uniqueContainers {
+		containerCandidates = append(containerCandidates, cont)
 	}
-	return containerCandicates, nil
+	return containerCandidates, nil
 }

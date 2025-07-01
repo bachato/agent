@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"net"
@@ -9,12 +10,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rs/zerolog/log"
-
-	"github.com/pkg/errors"
 	"github.com/portainer/agent"
 	"github.com/portainer/agent/crypto"
+	"github.com/portainer/agent/edge/health"
 	"github.com/portainer/agent/edge/revoke"
+	"github.com/portainer/agent/internals/updates"
+
+	"github.com/pkg/errors"
+	"github.com/rs/zerolog/log"
 )
 
 type edgeHTTPClient struct {
@@ -69,7 +72,21 @@ func (c *edgeHTTPClient) Do(req *http.Request) (*http.Response, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	return c.httpClient.Do(req)
+	res, err := c.httpClient.Do(req)
+
+	// Check if the response is healthy, if so create a healthy file
+	if err == nil && 200 <= res.StatusCode && res.StatusCode < 400 {
+		if healthErr := health.SetHealthy(); healthErr != nil {
+			log.Error().Err(healthErr).Msg("failed to set healthy")
+		}
+		go updates.AgentUpdateCleanupOnce(context.Background())
+	} else {
+		if healthErr := health.SetUnHealthy(); healthErr != nil {
+			log.Error().Err(healthErr).Msg("failed to set unhealthy")
+		}
+	}
+
+	return res, err
 }
 
 func (c *edgeHTTPClient) SetLocalAddr(localAddr *net.TCPAddr) {
