@@ -6,6 +6,7 @@ import (
 	"net/url"
 
 	"github.com/portainer/agent/crypto"
+	"github.com/portainer/agent/fips"
 )
 
 const kubernetesAPIURL = "https://kubernetes.default.svc"
@@ -15,7 +16,7 @@ func NewKubernetesProxy() http.Handler {
 	proxy := httputil.NewSingleHostReverseProxy(remoteURL)
 
 	tlsConfig := crypto.CreateTLSConfiguration()
-	tlsConfig.InsecureSkipVerify = true
+	tlsConfig.InsecureSkipVerify = fips.CanTLSSkipVerify()
 
 	proxy.Transport = &http.Transport{
 		TLSClientConfig: tlsConfig,

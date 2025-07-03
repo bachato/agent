@@ -19,6 +19,7 @@ import (
 	httpEdge "github.com/portainer/agent/edge/http"
 	"github.com/portainer/agent/edge/registry"
 	"github.com/portainer/agent/exec"
+	"github.com/portainer/agent/fips"
 	"github.com/portainer/agent/ghw"
 	"github.com/portainer/agent/http"
 	"github.com/portainer/agent/internals/updates"
@@ -74,6 +75,9 @@ func main() {
 
 	var updaterCleaner updates.GhostUpdaterCleaner
 	ctx := context.Background()
+
+	fips.InitFIPS(options.FIPSMode)
+
 	// !Generic
 
 	// Docker & Podman

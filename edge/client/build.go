@@ -14,6 +14,7 @@ import (
 	"github.com/portainer/agent/crypto"
 	"github.com/portainer/agent/edge/health"
 	"github.com/portainer/agent/edge/revoke"
+	"github.com/portainer/agent/fips"
 	"github.com/portainer/agent/internals/updates"
 
 	"github.com/pkg/errors"
@@ -127,7 +128,7 @@ func (c *edgeHTTPClient) buildTransport() *http.Transport {
 	transport.TLSClientConfig.ClientSessionCache = tls.NewLRUClientSessionCache(0)
 
 	if c.options.EdgeInsecurePoll {
-		transport.TLSClientConfig.InsecureSkipVerify = true
+		transport.TLSClientConfig.InsecureSkipVerify = fips.CanTLSSkipVerify()
 
 		return transport
 	}

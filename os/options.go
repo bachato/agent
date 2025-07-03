@@ -49,6 +49,7 @@ const (
 	EnvKeyEnvironmentGroup       = "PORTAINER_GROUP"
 	EnvKeyTags                   = "PORTAINER_TAGS"
 	EnvKeyPullLimitCheckDisabled = "PULL_LIMIT_CHECK_DISABLED"
+	EnvKeyFipsMode               = "FIPS_MODE"
 )
 
 type EnvOptionParser struct{}
@@ -102,6 +103,8 @@ var (
 	fAWSTrustAnchorARN = kingpin.Flag("aws-trust-anchor-arn", "AWS IAM Trust anchor used for authentication against IAM Roles Anywhere").Envar(EnvKeyAWSTrustAnchorARN).String()
 	fAWSProfileARN     = kingpin.Flag("aws-profile-arn", "AWS profile ARN used to pull policies from (IAM Roles Anywhere authentication)").Envar(EnvKeyAWSProfileARN).String()
 	fAWSRegion         = kingpin.Flag("aws-region", "AWS region used when signing against IAM Roles Anywhere").Envar(EnvKeyAWSRegion).String()
+
+	fFipsMode = kingpin.Flag("fips-mode", EnvKeyFipsMode+" enable FIPS mode. Disabled by default, set to 1 or true to enable it").Hidden().Envar(EnvKeyFipsMode).Bool()
 )
 
 func init() {
@@ -148,6 +151,7 @@ func (parser *EnvOptionParser) Options() (*agent.Options, error) {
 		EdgeInsecurePoll:      *fEdgeInsecurePoll,
 		EdgeTunnel:            *fEdgeTunnel,
 		EdgeTunnelProxy:       httpProxy,
+		FIPSMode:              *fFipsMode,
 		LogLevel:              *fLogLevel,
 		LogMode:               *fLogMode,
 		SharedSecret:          *fSharedSecret,

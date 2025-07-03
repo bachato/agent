@@ -102,6 +102,7 @@ type (
 		EdgeTunnel             bool
 		EdgeTunnelProxy        string
 		EdgeMetaFields         EdgeMetaFields
+		FIPSMode               bool
 		LogLevel               string
 		LogMode                string
 		SSLCert                string

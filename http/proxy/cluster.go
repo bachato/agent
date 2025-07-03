@@ -11,6 +11,7 @@ import (
 
 	"github.com/portainer/agent"
 	"github.com/portainer/agent/crypto"
+	"github.com/portainer/agent/fips"
 
 	"github.com/rs/zerolog/log"
 )
@@ -28,7 +29,7 @@ type ClusterProxy struct {
 // It also sets the default values used in the underlying http.Client.
 func NewClusterProxy(useTLS bool) *ClusterProxy {
 	tlsConfig := crypto.CreateTLSConfiguration()
-	tlsConfig.InsecureSkipVerify = true
+	tlsConfig.InsecureSkipVerify = fips.CanTLSSkipVerify()
 
 	return &ClusterProxy{
 		client: &http.Client{

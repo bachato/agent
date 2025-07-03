@@ -7,6 +7,7 @@ import (
 
 	"github.com/portainer/agent"
 	"github.com/portainer/agent/crypto"
+	"github.com/portainer/agent/fips"
 
 	"github.com/gorilla/websocket"
 	"github.com/koding/websocketproxy"
@@ -52,7 +53,7 @@ func proxyWebsocketRequest(rw http.ResponseWriter, request *http.Request, target
 	}
 
 	tlsConfig := crypto.CreateTLSConfiguration()
-	tlsConfig.InsecureSkipVerify = true
+	tlsConfig.InsecureSkipVerify = fips.CanTLSSkipVerify()
 
 	proxy.Dialer = &websocket.Dialer{
 		TLSClientConfig: tlsConfig,
@@ -77,7 +78,7 @@ func newAgentReverseProxy(target *url.URL, targetNode string) *httputil.ReverseP
 	}
 
 	tlsConfig := crypto.CreateTLSConfiguration()
-	tlsConfig.InsecureSkipVerify = true
+	tlsConfig.InsecureSkipVerify = fips.CanTLSSkipVerify()
 
 	return &httputil.ReverseProxy{
 		Director: director,
