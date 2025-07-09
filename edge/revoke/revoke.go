@@ -7,7 +7,6 @@ package revoke
 import (
 	"bytes"
 	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -32,7 +31,7 @@ type Service struct {
 	hardFail bool
 	// crlSet associates a PKIX certificate list with the URL the CRL is
 	// fetched from.
-	crlSet  map[string]*pkix.CertificateList
+	crlSet  map[string]*x509.RevocationList
 	crlLock sync.Mutex
 }
 
@@ -42,7 +41,7 @@ func NewService() *Service {
 			Timeout: defaultTimeoutInSeconds * time.Second,
 		},
 		hardFail: false,
-		crlSet:   make(map[string]*pkix.CertificateList),
+		crlSet:   make(map[string]*x509.RevocationList),
 	}
 }
 
@@ -118,7 +117,7 @@ func (service *Service) certIsRevokedCRL(cert *x509.Certificate, url string) (re
 
 	var shouldFetchCRL = true
 	if ok {
-		if !crl.HasExpired(time.Now()) {
+		if time.Now().Before(crl.NextUpdate) {
 			shouldFetchCRL = false
 		}
 	}
@@ -134,7 +133,7 @@ func (service *Service) certIsRevokedCRL(cert *x509.Certificate, url string) (re
 
 		// check CRL signature
 		if issuer := service.getIssuer(cert); issuer != nil {
-			err = issuer.CheckCRLSignature(crl)
+			err = crl.CheckSignatureFrom(issuer)
 			if err != nil {
 				log.Warn().Str("url", url).Err(err).Msg("failed verifying CRL")
 
@@ -147,7 +146,7 @@ func (service *Service) certIsRevokedCRL(cert *x509.Certificate, url string) (re
 		service.crlLock.Unlock()
 	}
 
-	for _, revoked := range crl.TBSCertList.RevokedCertificates {
+	for _, revoked := range crl.RevokedCertificateEntries {
 		if cert.SerialNumber.Cmp(revoked.SerialNumber) == 0 {
 			return true, nil
 		}
@@ -157,7 +156,7 @@ func (service *Service) certIsRevokedCRL(cert *x509.Certificate, url string) (re
 }
 
 // fetchCRL fetches and parses a CRL.
-func (service *Service) fetchCRL(url string) (*pkix.CertificateList, error) {
+func (service *Service) fetchCRL(url string) (*x509.RevocationList, error) {
 	resp, err := service.httpClient.Get(url)
 	if err != nil {
 		return nil, err
@@ -174,7 +173,7 @@ func (service *Service) fetchCRL(url string) (*pkix.CertificateList, error) {
 		return nil, err
 	}
 
-	return x509.ParseCRL(body)
+	return x509.ParseRevocationList(body)
 }
 
 func (service *Service) getIssuer(cert *x509.Certificate) *x509.Certificate {
