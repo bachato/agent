@@ -12,7 +12,11 @@ import (
 	"github.com/portainer/portainer/pkg/libkubectl"
 )
 
-var _ deployer.Deployer = &KubernetesDeployer{}
+const defaultServiceAccountTokenFile = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+
+var (
+	_ deployer.Deployer = &KubernetesDeployer{}
+)
 
 // KubernetesDeployer represents a service to deploy resources inside a Kubernetes environment.
 type KubernetesDeployer struct {
@@ -31,9 +35,16 @@ func (deployer *KubernetesDeployer) operation(_ context.Context, _ string, manif
 		return errors.New("missing manifests")
 	}
 
+	token, err := os.ReadFile(defaultServiceAccountTokenFile)
+	if err != nil {
+		return errors.Wrap(err, "failed to read service account token")
+	}
+
+	// insecure is true because we are using the in-cluster config
 	client, err := libkubectl.NewClient(&libkubectl.ClientAccess{
 		ServerUrl: "https://kubernetes.default.svc",
-	}, namespace, "", false)
+		Token:     string(token),
+	}, namespace, "", true)
 	if err != nil {
 		return errors.Wrap(err, "failed to create kubectl client")
 	}
