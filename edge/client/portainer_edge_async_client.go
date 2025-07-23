@@ -9,6 +9,7 @@ import (
 	"hash/fnv"
 	"maps"
 	"net/http"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -489,6 +490,10 @@ func (client *PortainerAsyncClient) createDockerSnapshot(payload *AsyncRequest, 
 	payload.Snapshot.Docker = nil
 }
 
+var noisyFieldRegexps = []*regexp.Regexp{
+	regexp.MustCompile("^/DockerSnapshotRaw/Containers/[0-9]+/Status$"),
+}
+
 // isDockerSnapshotDiffEmpty filters out diffs that only contain fields that
 // change all the time, so the server needs to process less of them
 func isDockerSnapshotDiffEmpty(dockerPatch jsondiff.Patch) bool {
@@ -502,6 +507,13 @@ func isDockerSnapshotDiffEmpty(dockerPatch jsondiff.Patch) bool {
 	}
 
 	for _, op := range dockerPatch {
+		// Skip noisy field regexps
+		for _, noisyRegexp := range noisyFieldRegexps {
+			if noisyRegexp.MatchString(op.Path.String()) {
+				continue
+			}
+		}
+
 		if op.Type != "replace" || !slices.Contains(noisyFields, op.Path.String()) {
 			return false
 		}
@@ -693,6 +705,10 @@ func optimizeDockerSnapshot(s *portainer.DockerSnapshot) {
 	for k := range s.SnapshotRaw.Containers {
 		sort.Slice(s.SnapshotRaw.Containers[k].Mounts, func(i, j int) bool {
 			return s.SnapshotRaw.Containers[k].Mounts[i].Destination < s.SnapshotRaw.Containers[k].Mounts[j].Destination
+		})
+
+		sort.Slice(s.SnapshotRaw.Containers[k].Ports, func(i, j int) bool {
+			return s.SnapshotRaw.Containers[k].Ports[i].PrivatePort < s.SnapshotRaw.Containers[k].Ports[j].PrivatePort
 		})
 	}
 }
