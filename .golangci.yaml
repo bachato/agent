@@ -12,6 +12,7 @@ linters:
     - copyloopvar
     - intrange
     - ineffassign
+    - bodyclose
 
 linters-settings:
   depguard:

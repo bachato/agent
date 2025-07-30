@@ -367,6 +367,8 @@ func (client *PortainerEdgeClient) GetEdgeConfig(id EdgeConfigID) (*EdgeConfig, 
 		return nil, err
 	}
 
+	defer resp.Body.Close()
+
 	if resp.StatusCode != http.StatusOK {
 		log.Error().Int("response_code", resp.StatusCode).Msg("GetEdgeConfig operation failed")
 
