@@ -7,11 +7,11 @@ import (
 	"time"
 
 	"github.com/portainer/agent"
-	"github.com/portainer/agent/crypto"
 	"github.com/portainer/agent/edge"
 	"github.com/portainer/agent/exec"
 	"github.com/portainer/agent/http/handler"
 	"github.com/portainer/agent/kubernetes"
+	"github.com/portainer/portainer/api/crypto"
 	httpError "github.com/portainer/portainer/pkg/libhttp/error"
 
 	"github.com/rs/zerolog/log"

@@ -11,11 +11,11 @@ import (
 	"time"
 
 	"github.com/portainer/agent"
-	"github.com/portainer/agent/crypto"
 	"github.com/portainer/agent/edge/health"
 	"github.com/portainer/agent/edge/revoke"
 	"github.com/portainer/agent/fips"
 	"github.com/portainer/agent/internals/updates"
+	"github.com/portainer/portainer/api/crypto"
 
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"

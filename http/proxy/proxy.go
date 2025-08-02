@@ -6,8 +6,8 @@ import (
 	"net/url"
 
 	"github.com/portainer/agent"
-	"github.com/portainer/agent/crypto"
 	"github.com/portainer/agent/fips"
+	"github.com/portainer/portainer/api/crypto"
 
 	"github.com/gorilla/websocket"
 	"github.com/koding/websocketproxy"

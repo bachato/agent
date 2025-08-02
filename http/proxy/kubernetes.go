@@ -5,8 +5,8 @@ import (
 	"net/http/httputil"
 	"net/url"
 
-	"github.com/portainer/agent/crypto"
 	"github.com/portainer/agent/fips"
+	"github.com/portainer/portainer/api/crypto"
 )
 
 const kubernetesAPIURL = "https://kubernetes.default.svc"

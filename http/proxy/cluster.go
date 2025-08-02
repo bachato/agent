@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/portainer/agent"
-	"github.com/portainer/agent/crypto"
 	"github.com/portainer/agent/fips"
+	"github.com/portainer/portainer/api/crypto"
 
 	"github.com/rs/zerolog/log"
 )

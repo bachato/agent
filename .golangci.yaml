@@ -13,8 +13,13 @@ linters:
     - intrange
     - ineffassign
     - bodyclose
+    - forbidigo
 
 linters-settings:
+  forbidigo:
+    forbid:
+      - p: ^tls\.Config$
+        msg: 'Use crypto.CreateTLSConfiguration() instead'
   depguard:
     rules:
       main:
