@@ -19,7 +19,6 @@ import (
 	httpEdge "github.com/portainer/agent/edge/http"
 	"github.com/portainer/agent/edge/registry"
 	"github.com/portainer/agent/exec"
-	"github.com/portainer/agent/fips"
 	"github.com/portainer/agent/ghw"
 	"github.com/portainer/agent/http"
 	"github.com/portainer/agent/internals/updates"
@@ -27,6 +26,7 @@ import (
 	"github.com/portainer/agent/net"
 	"github.com/portainer/agent/os"
 	cluster "github.com/portainer/agent/serf"
+	"github.com/portainer/portainer/pkg/fips"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
