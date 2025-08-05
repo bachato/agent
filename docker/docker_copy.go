@@ -3,14 +3,14 @@ package docker
 import (
 	"fmt"
 	"io"
-	"math/rand"
 	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
-	"time"
+	"strconv"
 
 	"github.com/portainer/agent"
+	"github.com/portainer/portainer/pkg/librand"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
@@ -107,8 +107,7 @@ func pullUnpackerImage() error {
 func createUnpackerContainer(stackID int, stackName, composeDestination string, cmd []string) (container.CreateResponse, error) {
 	image := getUnpackerImage()
 
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	containerName := fmt.Sprintf("portainer-unpacker-%d-%s-%d", stackID, stackName, r.Intn(100))
+	containerName := "portainer-unpacker-" + strconv.Itoa(stackID) + "-" + stackName + "-" + strconv.Itoa(librand.Intn(100))
 
 	return ContainerCreate(
 		&container.Config{

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"math/rand"
 	"strconv"
 	"strings"
 	"time"
@@ -15,6 +14,7 @@ import (
 	"github.com/portainer/agent/edge/scheduler"
 	"github.com/portainer/agent/edge/stack"
 	"github.com/portainer/portainer/pkg/libcrypto"
+	"github.com/portainer/portainer/pkg/librand"
 
 	"github.com/rs/zerolog/log"
 )
@@ -150,7 +150,7 @@ func (service *PollService) startStatusPollLoop() {
 			// Jitter
 			if lastPollFailed {
 				lastPollFailed = false
-				t := time.Duration(rand.Float64() * service.pollIntervalInSeconds * float64(time.Second))
+				t := time.Duration(librand.Float64() * service.pollIntervalInSeconds * float64(time.Second))
 				time.Sleep(t)
 				service.pollTicker.Reset(time.Duration(service.pollIntervalInSeconds) * time.Second)
 			}
