@@ -7,7 +7,6 @@ import (
 
 	"github.com/portainer/agent"
 	"github.com/portainer/portainer/api/crypto"
-	"github.com/portainer/portainer/pkg/fips"
 
 	"github.com/gorilla/websocket"
 	"github.com/koding/websocketproxy"
@@ -52,11 +51,8 @@ func proxyWebsocketRequest(rw http.ResponseWriter, request *http.Request, target
 		out.Set(agent.HTTPTargetHeaderName, targetNode)
 	}
 
-	tlsConfig := crypto.CreateTLSConfiguration()
-	tlsConfig.InsecureSkipVerify = fips.CanTLSSkipVerify()
-
 	proxy.Dialer = &websocket.Dialer{
-		TLSClientConfig: tlsConfig,
+		TLSClientConfig: crypto.CreateTLSConfiguration(true),
 	}
 
 	proxy.ServeHTTP(rw, request)
@@ -69,21 +65,20 @@ func newAgentReverseProxy(target *url.URL, targetNode string) *httputil.ReverseP
 		req.URL.Host = target.Host
 		req.URL.Path = target.Path
 		req.Host = req.URL.Host
+
 		if targetQuery == "" || req.URL.RawQuery == "" {
 			req.URL.RawQuery = targetQuery + req.URL.RawQuery
 		} else {
 			req.URL.RawQuery = targetQuery + "&" + req.URL.RawQuery
 		}
+
 		req.Header.Set(agent.HTTPTargetHeaderName, targetNode)
 	}
-
-	tlsConfig := crypto.CreateTLSConfiguration()
-	tlsConfig.InsecureSkipVerify = fips.CanTLSSkipVerify()
 
 	return &httputil.ReverseProxy{
 		Director: director,
 		Transport: &http.Transport{
-			TLSClientConfig: tlsConfig,
+			TLSClientConfig: crypto.CreateTLSConfiguration(true),
 		},
 	}
 }

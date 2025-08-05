@@ -124,12 +124,10 @@ func (c *edgeHTTPClient) buildTransport() *http.Transport {
 		}).DialContext
 	}
 
-	transport.TLSClientConfig = crypto.CreateTLSConfiguration()
+	transport.TLSClientConfig = crypto.CreateTLSConfiguration(c.options.EdgeInsecurePoll)
 	transport.TLSClientConfig.ClientSessionCache = tls.NewLRUClientSessionCache(0)
 
-	if c.options.EdgeInsecurePoll {
-		transport.TLSClientConfig.InsecureSkipVerify = fips.CanTLSSkipVerify()
-
+	if c.options.EdgeInsecurePoll && !fips.FIPSMode() {
 		return transport
 	}
 

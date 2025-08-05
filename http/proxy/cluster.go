@@ -11,7 +11,6 @@ import (
 
 	"github.com/portainer/agent"
 	"github.com/portainer/portainer/api/crypto"
-	"github.com/portainer/portainer/pkg/fips"
 
 	"github.com/rs/zerolog/log"
 )
@@ -28,8 +27,7 @@ type ClusterProxy struct {
 // NewClusterProxy returns a pointer to a ClusterProxy.
 // It also sets the default values used in the underlying http.Client.
 func NewClusterProxy(useTLS bool) *ClusterProxy {
-	tlsConfig := crypto.CreateTLSConfiguration()
-	tlsConfig.InsecureSkipVerify = fips.CanTLSSkipVerify()
+	tlsConfig := crypto.CreateTLSConfiguration(true)
 
 	return &ClusterProxy{
 		client: &http.Client{
@@ -40,7 +38,7 @@ func NewClusterProxy(useTLS bool) *ClusterProxy {
 			},
 		},
 		pingClient: &http.Client{
-			Timeout: time.Second * 3,
+			Timeout: 3 * time.Second,
 			Transport: &http.Transport{
 				TLSClientConfig:   tlsConfig,
 				DisableKeepAlives: true,

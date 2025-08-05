@@ -100,7 +100,7 @@ func (server *APIServer) Start(edgeMode bool) error {
 		return httpServer.ListenAndServe()
 	}
 
-	httpServer.TLSConfig = crypto.CreateTLSConfiguration()
+	httpServer.TLSConfig = crypto.CreateTLSConfiguration(false)
 
 	go server.securityShutdown(httpServer)
 
