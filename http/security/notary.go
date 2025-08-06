@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/portainer/agent"
+	"github.com/portainer/portainer/pkg/fips"
 	httperror "github.com/portainer/portainer/pkg/libhttp/error"
 )
 
@@ -14,8 +15,12 @@ type NotaryService struct {
 }
 
 func NewNotaryService(signatureService agent.DigitalSignatureService, signatureVerification bool) *NotaryService {
+	return newNotaryService(signatureService, signatureVerification, fips.FIPSMode())
+}
+
+func newNotaryService(signatureService agent.DigitalSignatureService, signatureVerification, fipsMode bool) *NotaryService {
 	return &NotaryService{
-		signatureVerification: signatureVerification,
+		signatureVerification: signatureVerification && !fipsMode,
 		signatureService:      signatureService,
 	}
 }
@@ -39,6 +44,7 @@ func (service *NotaryService) DigitalSignatureVerification(next http.Handler) ht
 		}
 
 		next.ServeHTTP(rw, r)
+
 		return nil
 	})
 }
