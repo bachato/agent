@@ -12,15 +12,15 @@ import (
 type portainerHelper struct {
 }
 
-func (h *portainerHelper) Add(*credentials.Credentials) error {
+func (h portainerHelper) Add(*credentials.Credentials) error {
 	return nil
 }
 
-func (h *portainerHelper) Delete(serverURL string) error {
+func (h portainerHelper) Delete(serverURL string) error {
 	return nil
 }
 
-func (h *portainerHelper) Get(serverURL string) (string, string, error) {
+func (h portainerHelper) Get(serverURL string) (string, string, error) {
 	f, err := os.OpenFile("/tmp/portainer-credential-helper.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		log.Fatalf("error opening file: %v", err)
@@ -56,6 +56,6 @@ func (h *portainerHelper) Get(serverURL string) (string, string, error) {
 	return c.Username, secret, nil
 }
 
-func (h *portainerHelper) List() (map[string]string, error) {
+func (h portainerHelper) List() (map[string]string, error) {
 	return nil, nil
 }

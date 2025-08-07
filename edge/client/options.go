@@ -13,7 +13,7 @@ type options struct {
 func defaultOptions() *options {
 	return &options{
 		version:           agent.Version,
-		dockerSnapshotter: &docker.Snapshotter{},
+		dockerSnapshotter: docker.Snapshotter{},
 	}
 }
 

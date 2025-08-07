@@ -23,13 +23,13 @@ const (
 type InfoService struct{}
 
 // NewInfoService returns a pointer to an instance of DockerInfoService
-func NewInfoService() *InfoService {
-	return &InfoService{}
+func NewInfoService() InfoService {
+	return InfoService{}
 }
 
 // GetRuntimeConfigurationFromDockerEngine retrieves information from a Docker environment
 // and returns a map of labels.
-func (service *InfoService) GetRuntimeConfigurationFromDockerEngine() (*agent.RuntimeConfig, error) {
+func (service InfoService) GetRuntimeConfigurationFromDockerEngine() (*agent.RuntimeConfig, error) {
 	cli, err := NewClient()
 	if err != nil {
 		return nil, err
@@ -64,7 +64,7 @@ func (service *InfoService) GetRuntimeConfigurationFromDockerEngine() (*agent.Ru
 // It will inspect the container to retrieve the networks associated to the container and returns the IP associated
 // to the first network found that is not an ingress network. If the ignoreNonSwarmNetworks parameter is specified,
 // it will also ignore non Swarm scoped networks.
-func (service *InfoService) GetContainerIpFromDockerEngine(containerName string, ignoreNonSwarmNetworks bool) (string, error) {
+func (service InfoService) GetContainerIpFromDockerEngine(containerName string, ignoreNonSwarmNetworks bool) (string, error) {
 	cli, err := NewClient()
 	if err != nil {
 		return "", err
@@ -115,7 +115,7 @@ func (service *InfoService) GetContainerIpFromDockerEngine(containerName string,
 
 // GetServiceNameFromDockerEngine is used to return the name of the Swarm service the agent is part of.
 // The service name is retrieved through container labels.
-func (service *InfoService) GetServiceNameFromDockerEngine(containerName string) (string, error) {
+func (service InfoService) GetServiceNameFromDockerEngine(containerName string) (string, error) {
 	cli, err := NewClient()
 	if err != nil {
 		return "", err

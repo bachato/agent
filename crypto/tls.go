@@ -18,8 +18,7 @@ import (
 type TLSService struct{}
 
 // GenerateCertsForHost will generate a cert and key based on the specified host.
-func (service *TLSService) GenerateCertsForHost(host string) error {
-
+func (service TLSService) GenerateCertsForHost(host string) error {
 	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
 	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
 	if err != nil {

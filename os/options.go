@@ -54,8 +54,8 @@ const (
 
 type EnvOptionParser struct{}
 
-func NewEnvOptionParser() *EnvOptionParser {
-	return &EnvOptionParser{}
+func NewEnvOptionParser() EnvOptionParser {
+	return EnvOptionParser{}
 }
 
 var (
@@ -113,7 +113,7 @@ func init() {
 	kingpin.Flag("sslcacert", "(DEPRECATED) Path to the mTLS CA certificate used to validate the Portainer server").Envar(EnvKeySSLCACert).StringVar(fSSLCACert)
 }
 
-func (parser *EnvOptionParser) Options() (*agent.Options, error) {
+func (parser EnvOptionParser) Options() (*agent.Options, error) {
 	kingpin.Parse()
 
 	edgeGroupsIDs, err := parseListValue(fEdgeGroupsIDs)

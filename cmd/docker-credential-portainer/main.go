@@ -17,6 +17,6 @@ func main() {
 
 	log.Printf("running portainer-credential-helper")
 
-	helper := &portainerHelper{}
+	helper := portainerHelper{}
 	credentials.Serve(helper)
 }
