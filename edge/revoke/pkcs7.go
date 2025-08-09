@@ -59,7 +59,7 @@ type signedData struct {
 	Version          int
 	DigestAlgorithms asn1.RawValue
 	ContentInfo      asn1.RawValue
-	Certificates     asn1.RawValue `asn1:"optional" asn1:"tag:0"`
+	Certificates     asn1.RawValue `asn1:"optional,tag:0"`
 	Crls             asn1.RawValue `asn1:"optional"`
 	SignerInfos      asn1.RawValue
 }

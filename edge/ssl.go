@@ -21,11 +21,7 @@ func BlockUntilCertificateIsReady(certPath, keyPath string, retryInterval time.D
 		return true
 	}
 
-	for {
-		if checkIfCertsReady() {
-			break
-		}
-
+	for !checkIfCertsReady() {
 		log.Info().Msg("Waiting for certificate to be ready")
 
 		time.Sleep(retryInterval)
