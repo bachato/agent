@@ -13,7 +13,6 @@ import (
 
 func TestGetEdgeConfig(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"Id": 1, "Name": "test"}`))
 	}))
 	defer srv.Close()
