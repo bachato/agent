@@ -12,7 +12,7 @@ require (
 	github.com/awslabs/amazon-ecr-credential-helper/ecr-login v0.0.0-20221118222346-4177265fa425
 	github.com/distribution/reference v0.6.0
 	github.com/docker/cli v28.2.1+incompatible
-	github.com/docker/docker v28.2.1+incompatible
+	github.com/docker/docker v28.3.3+incompatible
 	github.com/docker/docker-credential-helpers v0.9.3
 	github.com/gorilla/mux v1.8.1
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
