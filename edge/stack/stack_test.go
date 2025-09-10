@@ -63,7 +63,7 @@ func TestStackManager_pullImages(t *testing.T) {
 		mockPortainerClient.EXPECT().SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusImagesPulled, stack.RollbackTo, "").Return(nil)
 
 		err := manager.pullImages(ctx, stack, stackName, stackFileLocation)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.True(t, stack.PullFinished)
 		assert.Equal(t, StatusDeploying, stack.Status)
 	})
@@ -91,7 +91,7 @@ func TestStackManager_pullImages(t *testing.T) {
 		}).Return(errors.New("pull failed"))
 
 		err := manager.pullImages(ctx, stack, stackName, stackFileLocation)
-		assert.Error(t, err)
+		require.Error(t, err)
 		assert.False(t, stack.PullFinished)
 		assert.Equal(t, StatusRetry, stack.Status)
 	})
@@ -112,7 +112,7 @@ func TestStackManager_pullImages(t *testing.T) {
 		stack.PullCount = perHourRetries + 1
 
 		err := manager.pullImages(ctx, stack, stackName, stackFileLocation)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.False(t, stack.PullFinished)
 		assert.Equal(t, StatusPending, stack.Status)
 	})
@@ -401,7 +401,7 @@ func TestStackManager_checkStackStatus(t *testing.T) {
 
 			err := manager.checkStackStatus(ctx, stack.Name, stack, deployer.CheckStatusOptions{})
 
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			assert.Equal(t, tt.expectedEdgeStackStatus, stack.Status)
 		})
 	}
@@ -507,7 +507,7 @@ func TestStackManager_performActionOnStack(t *testing.T) {
 
 	env := getContainerEnv(containerName)
 
-	require.Equal(t, "", env["HOST_VAR"], "HOST_VAR env var should not be set in created container")
+	require.Empty(t, env["HOST_VAR"], "HOST_VAR env var should not be set in created container")
 	require.Equal(t, "hello", env["PORTAINER_HOST_VAR"], "PORTAINER_HOST_VAR env var should be set in created container")
 	require.Equal(t, "test", env["OTHER_VAR"], "OTHER_VAR env var should be set in created container")
 }

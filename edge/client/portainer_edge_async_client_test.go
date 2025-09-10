@@ -25,7 +25,10 @@ func Test_executeAsyncRequestCompression(t *testing.T) {
 	payload := AsyncRequest{Snapshot: &snapshot{}}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.NotEqual(t, "gzip", r.Header.Get("Content-Encoding"))
+		if r.Header.Get("Content-Encoding") == "gzip" {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 
 		w.Write([]byte("{}"))
 	}))
@@ -45,7 +48,10 @@ func Test_executeAsyncRequestCompression(t *testing.T) {
 	}
 
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "gzip", r.Header.Get("Content-Encoding"))
+		if r.Header.Get("Content-Encoding") != "gzip" {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 
 		w.Write([]byte("{}"))
 	}))

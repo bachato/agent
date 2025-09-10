@@ -38,7 +38,7 @@ func TestPortainerEdgeIDEnvVarPresent(t *testing.T) {
 
 	edgeStack, ok := sm.stacks[edgeStackID(stackID)]
 	require.True(t, ok)
-	require.Greater(t, len(edgeStack.EnvVars), 0)
+	require.NotEmpty(t, edgeStack.EnvVars)
 	require.Equal(t, agent.EdgeIdEnvVarName, edgeStack.EnvVars[0].Name)
 	require.Equal(t, edgeID, edgeStack.EnvVars[0].Value)
 }

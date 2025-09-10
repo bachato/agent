@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestHealthy(t *testing.T) {
@@ -12,7 +13,7 @@ func TestHealthy(t *testing.T) {
 	healthy := Healthy()
 	assert.False(t, healthy, "should be unhealthy")
 	err := SetHealthy()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	healthy = Healthy()
 	assert.True(t, healthy, "should be healthy")
@@ -21,23 +22,23 @@ func TestHealthy(t *testing.T) {
 func TestSetHealthy(t *testing.T) {
 	withCleanup(t)
 	err := SetHealthy()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.True(t, Healthy(), "should be healthy")
 	err = SetHealthy()
-	assert.NoError(t, err, "should not error when already healthy, this verifies idempotency")
+	require.NoError(t, err, "should not error when already healthy, this verifies idempotency")
 }
 
 func TestSetUnhealthy(t *testing.T) {
 	withCleanup(t)
 	err := SetHealthy()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.True(t, Healthy(), "should be healthy")
 
 	err = SetUnHealthy()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.False(t, Healthy(), "should be unhealthy")
 	err = SetUnHealthy()
-	assert.NoError(t, err, "should not error when already unhealthy, this verifies idempotency")
+	require.NoError(t, err, "should not error when already unhealthy, this verifies idempotency")
 }
 
 func TestConcurrency(t *testing.T) {
@@ -70,7 +71,7 @@ func TestConcurrency(t *testing.T) {
 	close(errs)
 
 	for err := range errs {
-		assert.NoError(t, err, "unexpected error during concurrent access")
+		require.NoError(t, err, "unexpected error during concurrent access")
 	}
 }
 
