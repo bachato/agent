@@ -49,6 +49,8 @@ linters:
           msg: "Not allowed because of FIPS mode"
         - pattern: ^(types\.SystemContext\.)?(DockerDaemonInsecureSkipTLSVerify|DockerInsecureSkipTLSVerify|OCIInsecureSkipTLSVerify)$
           msg: "Not allowed because of FIPS mode"
+        - pattern: ^(chclient\.TLSConfig\.)?SkipVerify$
+          msg: "Not allowed because of FIPS mode"
       analyze-types: true
   exclusions:
     generated: lax
