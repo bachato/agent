@@ -82,7 +82,12 @@ type StackStatus struct {
 	Version          int
 	Name             string // used in async mode
 	CommandOperation string // used in async mode
-	ReadyRePullImage bool
+	// ForceRedeploy is used to indicate that the stack should be redeployed
+	// even if the version is the same this value is set by the server
+	ForceRedeploy bool
+	// RepullImage is used to indicate that the image should be re-pulled
+	// during the next deployment of the stack
+	RePullImage bool
 }
 
 type setEndpointIDFn func(portainer.EndpointID)

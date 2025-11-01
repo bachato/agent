@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"log"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -409,7 +411,8 @@ func TestStackManager_checkStackStatus(t *testing.T) {
 
 type mockPortainerClient struct {
 	client.PortainerClient
-	t *testing.T
+	t            *testing.T
+	stackPayload *edge.StackPayload
 }
 
 func (m *mockPortainerClient) SetEdgeStackStatus(
@@ -423,6 +426,105 @@ func (m *mockPortainerClient) SetEdgeStackStatus(
 		m.t.Fatal(errMessage)
 	}
 	return nil
+}
+
+func (m *mockPortainerClient) GetEdgeStackConfig(stackID int, version *int) (*edge.StackPayload, error) {
+	if m.stackPayload != nil {
+		return m.stackPayload, nil
+	}
+	return &edge.StackPayload{}, nil
+}
+
+func setupStackManager(t *testing.T) *StackManager {
+	// Create a compose file
+	composeFile := `services:
+		nginx:
+			image: nginx`
+
+	stackPayload := &edge.StackPayload{
+		ID:   1,
+		Name: "test-stack",
+		DirEntries: []filesystem.DirEntry{
+			{
+				Name:    "docker-compose.yml",
+				Content: base64.StdEncoding.EncodeToString([]byte(composeFile)),
+				IsFile:  true,
+			},
+		},
+		Version:       1,
+		EntryFileName: "docker-compose.yml",
+	}
+
+	stackFolder := getStackFileFolder(&edgeStack{StackPayload: *stackPayload})
+	require.NoError(t, os.MkdirAll(stackFolder, 0755))
+	t.Cleanup(func() {
+		require.NoError(t, os.RemoveAll(stackFolder))
+	})
+
+	// Mock portainer client
+	mockClient := &mockPortainerClient{stackPayload: stackPayload}
+
+	manager := NewStackManager(mockClient, "", nil, "edge_id", nil)
+	manager.stacks[edgeStackID(stackPayload.ID)] = &edgeStack{
+		StackPayload: edge.StackPayload{
+			ID: stackPayload.ID, Version: stackPayload.Version,
+		},
+	}
+
+	return manager
+}
+
+func TestStackManager_processStack_ForceRecreate(t *testing.T) {
+	t.Run("Force redeploy flag - should set ForceRecreate to true", func(t *testing.T) {
+		manager := setupStackManager(t)
+		stackStatus := client.StackStatus{Version: 1, ForceRedeploy: true}
+
+		// Test the target function
+		require.NoError(t, manager.processStack(1, stackStatus))
+
+		// Verify the stack was created and ForceRecreate is set to true
+		stack, exists := manager.stacks[edgeStackID(1)]
+		require.True(t, exists)
+		require.True(t, stack.DeployerOptionsPayload.ForceRecreate)
+	})
+
+	t.Run("No force flags - should set ForceRecreate to false", func(t *testing.T) {
+		manager := setupStackManager(t)
+		stackStatus := client.StackStatus{Version: 1}
+
+		// Test the target function
+		require.NoError(t, manager.processStack(1, stackStatus))
+
+		// Verify the stack was created and ForceRecreate is set to false
+		stack, exists := manager.stacks[edgeStackID(1)]
+		require.True(t, exists)
+		require.False(t, stack.DeployerOptionsPayload.ForceRecreate)
+	})
+}
+
+func TestResetForceRecreateStatus(t *testing.T) {
+	t.Run("ForceRecreate is true", func(t *testing.T) {
+		stack := &edgeStack{
+			StackPayload: edge.StackPayload{
+				DeployerOptionsPayload: edge.DeployerOptionsPayload{
+					ForceRecreate: true,
+				},
+			},
+		}
+		resetForceRecreateStatus(stack)
+		require.False(t, stack.DeployerOptionsPayload.ForceRecreate)
+	})
+	t.Run("ForceRecreate is false", func(t *testing.T) {
+		stack := &edgeStack{
+			StackPayload: edge.StackPayload{
+				DeployerOptionsPayload: edge.DeployerOptionsPayload{
+					ForceRecreate: false,
+				},
+			},
+		}
+		resetForceRecreateStatus(stack)
+		require.False(t, stack.DeployerOptionsPayload.ForceRecreate)
+	})
 }
 
 func TestStackManager_performActionOnStack(t *testing.T) {

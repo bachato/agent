@@ -200,7 +200,9 @@ func (client *PortainerEdgeClient) GetEnvironmentStatus(flags ...string) (*PollS
 		return nil, err
 	}
 
-	client.cacheResponse(resp.Header.Get("ETag"), &responseData)
+	respForCache := mutateResponseForCaching(&responseData)
+
+	client.cacheResponse(resp.Header.Get("ETag"), &respForCache)
 
 	return &responseData, nil
 }
@@ -457,4 +459,24 @@ func (client *PortainerEdgeClient) cacheResponse(etag string, resp *PollStatusRe
 	}
 
 	client.reqCache.Add(etag, resp)
+}
+
+// mutateResponseForCaching makes a copy of the original PollStatusResponse
+// and mutates it for caching purpose (e.g. removing ForceRedeploy flags)
+// This is to avoid to cache a response that would trigger a redeployment.
+// Without mutation, when a ForceRedeploy flag is set to true and cached, the
+// redeployment would be triggered on every subsequent poll request. e.g. every 5s
+func mutateResponseForCaching(resp *PollStatusResponse) PollStatusResponse {
+	// Clone the original poll status response
+	respForCache := *resp
+	respForCache.Stacks = make([]StackStatus, len(resp.Stacks))
+	copy(respForCache.Stacks, resp.Stacks)
+
+	// Mutate for caching
+	for i, stack := range respForCache.Stacks {
+		if stack.ForceRedeploy {
+			respForCache.Stacks[i].ForceRedeploy = false
+		}
+	}
+	return respForCache
 }

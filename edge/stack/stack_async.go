@@ -49,14 +49,15 @@ func (manager *StackManager) buildDeployerParams(stackPayload edge.StackPayload,
 
 			stack.Action = actionDelete
 		} else {
-			if stack.Version == stackPayload.Version && !stackPayload.ReadyRePullImage {
+			// If stackPayload.DeployerOptionsPayload.ForceRecreate is true,
+			// the force recreate flag could be set by GitOps or manually.
+			if stack.Version == stackPayload.Version && !stackPayload.DeployerOptionsPayload.ForceRecreate {
 				return nil
 			}
 
 			log.Debug().Int("stack_id", stackPayload.ID).Msg("marking stack for update")
 
 			stack.Action = actionUpdate
-			stack.ReadyRePullImage = stackPayload.ReadyRePullImage
 		}
 	} else {
 		if deleteStack {
@@ -89,7 +90,7 @@ func (manager *StackManager) buildDeployerParams(stackPayload edge.StackPayload,
 	stack.Version = stackPayload.Version
 
 	stack.PrePullImage = stackPayload.PrePullImage
-	stack.RePullImage = stackPayload.RePullImage
+	stack.ForceUpdate = stackPayload.ForceUpdate
 	stack.RetryDeploy = stackPayload.RetryDeploy
 	stack.RetryPeriod = stackPayload.RetryPeriod
 	stack.PullCount = 0
@@ -105,6 +106,12 @@ func (manager *StackManager) buildDeployerParams(stackPayload edge.StackPayload,
 	stack.EnvVars = append(stackPayload.EnvVars, edgeIdPair)
 	stack.Namespace = stackPayload.Namespace
 	stack.EdgeUpdateID = stackPayload.EdgeUpdateID
+
+	// When to force recreate the stack
+	// 1. When the stack is updated by GitOps with the ForceUpdate flag set to true
+	// 2. When the stack is manually forced to re-pull image and redeploy
+	stack.DeployerOptionsPayload.ForceRecreate = stackPayload.ForceUpdate || stackPayload.DeployerOptionsPayload.ForceRecreate
+	stack.RePullImage = stackPayload.RePullImage
 
 	if err := filesystem.DecodeDirEntries(stackPayload.DirEntries); err != nil {
 		return err

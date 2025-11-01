@@ -87,14 +87,13 @@ func (manager *StackManager) addRegistryToEntryFile(stackPayload *edge.StackPayl
 
 func (manager *StackManager) processStack(stackID int, stackStatus client.StackStatus) error {
 	var stack *edgeStack
-
 	originalStack, known := manager.stacks[edgeStackID(stackID)]
 	if known {
 		// update the cloned stack to keep data consistency
 		clonedStack := *originalStack
 		stack = &clonedStack
 
-		if stack.Version == stackStatus.Version && !stackStatus.ReadyRePullImage {
+		if stack.Version == stackStatus.Version && !stackStatus.ForceRedeploy {
 			return nil // stack is unchanged
 		}
 
@@ -107,7 +106,6 @@ func (manager *StackManager) processStack(stackID int, stackStatus client.StackS
 		stack.PullFinished = false
 		stack.PullCount = 0
 		stack.DeployCount = 0
-		stack.ReadyRePullImage = stackStatus.ReadyRePullImage
 	} else {
 		log.Debug().Int("stack_identifier", stackID).Msg("marking stack for deployment")
 
@@ -133,9 +131,9 @@ func (manager *StackManager) processStack(stackID int, stackStatus client.StackS
 	stack.Namespace = stackPayload.Namespace
 	stack.PrePullImage = stackPayload.PrePullImage
 	stack.DeployerOptionsPayload = stackPayload.DeployerOptionsPayload
-	stack.RePullImage = stackPayload.RePullImage
 	stack.RetryDeploy = stackPayload.RetryDeploy
 	stack.RetryPeriod = stackPayload.RetryPeriod
+	stack.ForceUpdate = stackPayload.ForceUpdate
 	stack.EnvVars = append(stackPayload.EnvVars, edgeIdPair)
 	stack.SupportRelativePath = stackPayload.SupportRelativePath
 	stack.AlwaysCloneGitRepoForRelativePath = stackPayload.AlwaysCloneGitRepoForRelativePath
@@ -144,6 +142,12 @@ func (manager *StackManager) processStack(stackID int, stackStatus client.StackS
 	stack.FileFolder = getStackFileFolder(stack)
 	stack.RollbackTo = stackPayload.RollbackTo
 	stack.EdgeUpdateID = stackPayload.EdgeUpdateID
+
+	// When to force recreate the stack
+	// 1. When the stack is updated by GitOps with the ForceUpdate flag set to true
+	// 2. When the stack is manually forced to re-pull image and redeploy
+	stack.DeployerOptionsPayload.ForceRecreate = stackPayload.ForceUpdate || stackStatus.ForceRedeploy
+	stack.RePullImage = stackPayload.RePullImage || stackStatus.RePullImage
 
 	if err := filesystem.DecodeDirEntries(stackPayload.DirEntries); err != nil {
 		return err
@@ -251,8 +255,8 @@ func (manager *StackManager) performActionOnStack() {
 		// bind source folder. However, container recreation is not guaranteed during
 		// this process, so changes to the bind source may not be reflected in the container.
 		// Therefore, this operation should only be performed if the stack is new
-		// or if the re-pull image flag is explicitly set.
-		if IsRelativePathStack(stack) && (stack.Action == actionDeploy || stack.RePullImage || stack.AlwaysCloneGitRepoForRelativePath) {
+		// or the AlwaysCloneGitRepoForRelativePath flag is set to true.
+		if IsRelativePathStack(stack) && (stack.Action == actionDeploy || stack.AlwaysCloneGitRepoForRelativePath) {
 			dst := filepath.Join(stack.FilesystemPath, agent.ComposePathPrefix)
 
 			if err := docker.CopyGitStackToHost(stack.FileFolder, dst, stack.ID, stackName, manager.assetsPath); err != nil {
@@ -271,6 +275,8 @@ func (manager *StackManager) performActionOnStack() {
 		}
 
 		manager.deployStack(ctx, stack, stackName, stackFileLocation)
+
+		resetForceRecreateStatus(stack)
 	case actionDelete:
 		stackFileLocation = fmt.Sprintf("%s/%s", SuccessStackFileFolder(stack.FileFolder), stack.FileName)
 		manager.deleteStack(ctx, stack, stackName, stackFileLocation)
@@ -469,7 +475,7 @@ func (manager *StackManager) pullImages(ctx context.Context, stack *edgeStack, s
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 
-	if stack.PullFinished || (!stack.PrePullImage && !stack.RePullImage && !stack.ReadyRePullImage) {
+	if stack.PullFinished || (!stack.PrePullImage && !stack.RePullImage) {
 		return nil
 	}
 
@@ -579,7 +585,7 @@ func (manager *StackManager) deployStack(ctx context.Context, stack *edgeStack, 
 			},
 			EdgeStackID:   portainer.EdgeStackID(stack.ID),
 			Prune:         stack.DeployerOptionsPayload.Prune,
-			ForceRecreate: stack.RePullImage,
+			ForceRecreate: stack.DeployerOptionsPayload.ForceRecreate,
 		},
 	)
 	manager.mu.Lock()
@@ -756,4 +762,17 @@ func buildEnvVarsForDeployer(envVars []portainer.Pair) []string {
 	}
 
 	return arr
+}
+
+func resetForceRecreateStatus(stack *edgeStack) {
+	// When Force redeployment is set for the stack from GitOps updates, the stack.ForceUpdate will
+	// always be true. That means the stack will be force recreated on every polling frequency (5s
+	// by default). But this is not the desired behavior.
+	//
+	// We should only execute the force redeployment once until the next GitOps update is triggered.
+	// Therefore, when the stack.ForceRecreate is set to true, after passing it to compose service, we
+	// should reset it to false.
+	if stack.DeployerOptionsPayload.ForceRecreate {
+		stack.DeployerOptionsPayload.ForceRecreate = false
+	}
 }

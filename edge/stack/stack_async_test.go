@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/base64"
 	"math/rand/v2"
+	"os"
 	"testing"
 
 	"github.com/portainer/agent"
 	"github.com/portainer/portainer/api/edge"
 	"github.com/portainer/portainer/api/filesystem"
-
 	"github.com/stretchr/testify/require"
 )
 
@@ -41,4 +41,66 @@ func TestPortainerEdgeIDEnvVarPresent(t *testing.T) {
 	require.NotEmpty(t, edgeStack.EnvVars)
 	require.Equal(t, agent.EdgeIdEnvVarName, edgeStack.EnvVars[0].Name)
 	require.Equal(t, edgeID, edgeStack.EnvVars[0].Value)
+}
+
+func setupManagerAndFile(t *testing.T) (*StackManager, string) {
+	manager := NewStackManager(nil, "", nil, "edge_id", nil)
+	manager.stacks[edgeStackID(1)] = &edgeStack{
+		StackPayload: edge.StackPayload{ID: 1, Version: 1},
+	}
+
+	// Create a compose file
+	composeFile := `services:
+		nginx:
+			image: nginx`
+
+	stackFolder := getStackFileFolder(&edgeStack{StackPayload: edge.StackPayload{ID: 1, Version: 1}})
+	require.NoError(t, os.MkdirAll(stackFolder, 0755))
+	t.Cleanup(func() {
+		require.NoError(t, os.RemoveAll(stackFolder))
+	})
+
+	return manager, composeFile
+}
+
+func TestStack_BuildDeployerParams_ForceRecreate(t *testing.T) {
+	t.Run("Force redeploy flag- should set ForceRecreate to true", func(t *testing.T) {
+		manager, composeFile := setupManagerAndFile(t)
+
+		stackPayload := edge.StackPayload{ID: 1, Version: 1,
+			DeployerOptionsPayload: edge.DeployerOptionsPayload{
+				ForceRecreate: true,
+			},
+			DirEntries: []filesystem.DirEntry{
+				{
+					Name:    "docker-compose.yml",
+					Content: base64.StdEncoding.EncodeToString([]byte(composeFile)),
+					IsFile:  true,
+				},
+			},
+			EntryFileName: "docker-compose.yml",
+		}
+
+		// Test the target function
+		require.NoError(t, manager.buildDeployerParams(stackPayload, false))
+
+		require.True(t, manager.stacks[edgeStackID(stackPayload.ID)].DeployerOptionsPayload.ForceRecreate)
+	})
+
+	t.Run("No force flags - should set ForceRecreate to false", func(t *testing.T) {
+		manager, composeFile := setupManagerAndFile(t)
+		stackPayload := edge.StackPayload{ID: 1, Version: 2,
+			DirEntries: []filesystem.DirEntry{
+				{
+					Name:    "docker-compose.yml",
+					Content: base64.StdEncoding.EncodeToString([]byte(composeFile)),
+					IsFile:  true,
+				},
+			},
+			EntryFileName: "docker-compose.yml",
+		}
+		require.NoError(t, manager.buildDeployerParams(stackPayload, false))
+
+		require.False(t, manager.stacks[edgeStackID(stackPayload.ID)].DeployerOptionsPayload.ForceRecreate)
+	})
 }
