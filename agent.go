@@ -304,6 +304,10 @@ const (
 	DefaultAssetsPath = "/app"
 	// EdgeStackFilesPath is the path where edge stack files are saved
 	EdgeStackFilesPath = "/tmp/edge_stacks"
+	// UpdateEdgeStackFilesPath is the path where remote update edge stack files are saved.
+	// Using a tmpfs to avoid persisting potentially sensitive data on disk, and is removed when the new
+	// agent container starts.
+	UpdateEdgeStackFilesPath = "/dev/shm/update_edge_stacks"
 	// EdgeStackQueueSleepIntervalSeconds is the interval in seconds used to check if there's an Edge stack to deploy
 	EdgeStackQueueSleepIntervalSeconds = 5
 	// KubernetesServiceHost is the environment variable name of the kubernetes API server host

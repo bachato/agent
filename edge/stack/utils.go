@@ -32,7 +32,9 @@ func getStackFileFolder(stack *edgeStack) string {
 	stackIDStr := strconv.Itoa(stack.ID)
 
 	folder := filepath.Join(agent.EdgeStackFilesPath, stackIDStr)
-	if IsRelativePathStack(stack) {
+	if stack.EdgeUpdateID != 0 {
+		folder = filepath.Join(agent.UpdateEdgeStackFilesPath, stackIDStr)
+	} else if IsRelativePathStack(stack) {
 		folder = filepath.Join(stack.FilesystemPath, agent.ComposePathPrefix, stackIDStr)
 	}
 
