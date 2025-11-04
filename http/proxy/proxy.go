@@ -58,25 +58,27 @@ func proxyWebsocketRequest(rw http.ResponseWriter, request *http.Request, target
 	proxy.ServeHTTP(rw, request)
 }
 
-func newAgentReverseProxy(target *url.URL, targetNode string) *httputil.ReverseProxy {
+func createRewriteFn(target *url.URL, targetNode string) func(*httputil.ProxyRequest) {
 	targetQuery := target.RawQuery
-	director := func(req *http.Request) {
-		req.URL.Scheme = target.Scheme
-		req.URL.Host = target.Host
-		req.URL.Path = target.Path
-		req.Host = req.URL.Host
+	return func(req *httputil.ProxyRequest) {
+		req.Out.URL.Scheme = target.Scheme
+		req.Out.URL.Host = target.Host
+		req.Out.URL.Path = target.Path
+		req.Out.Host = req.Out.URL.Host
 
-		if targetQuery == "" || req.URL.RawQuery == "" {
-			req.URL.RawQuery = targetQuery + req.URL.RawQuery
+		if targetQuery == "" || req.Out.URL.RawQuery == "" {
+			req.Out.URL.RawQuery = targetQuery + req.In.URL.RawQuery
 		} else {
-			req.URL.RawQuery = targetQuery + "&" + req.URL.RawQuery
+			req.Out.URL.RawQuery = targetQuery + "&" + req.In.URL.RawQuery
 		}
 
-		req.Header.Set(agent.HTTPTargetHeaderName, targetNode)
+		req.Out.Header.Set(agent.HTTPTargetHeaderName, targetNode)
 	}
+}
 
+func newAgentReverseProxy(target *url.URL, targetNode string) *httputil.ReverseProxy {
 	return &httputil.ReverseProxy{
-		Director: director,
+		Rewrite: createRewriteFn(target, targetNode),
 		Transport: &http.Transport{
 			TLSClientConfig: crypto.CreateTLSConfiguration(true),
 		},

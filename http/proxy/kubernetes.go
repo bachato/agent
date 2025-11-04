@@ -16,7 +16,15 @@ const kubernetesAPIURL = "https://kubernetes.default.svc"
 
 func NewKubernetesProxy() *httputil.ReverseProxy {
 	remoteURL, _ := url.Parse(kubernetesAPIURL)
-	proxy := httputil.NewSingleHostReverseProxy(remoteURL)
+
+	// This preserves the behaviour of httputil.NewSingleHostReverseProxy but using the Rewrite field
+	// instead of the deprecated Director field.
+	proxy := &httputil.ReverseProxy{
+		Rewrite: func(r *httputil.ProxyRequest) {
+			r.SetURL(remoteURL)
+			r.Out.Host = r.In.Host
+		},
+	}
 
 	config, err := rest.InClusterConfig()
 	if err != nil {
