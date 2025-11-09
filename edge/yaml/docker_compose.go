@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/pkg/errors"
 	"github.com/portainer/agent"
 	"github.com/portainer/agent/edge/aws"
+	portainer "github.com/portainer/portainer/api"
 	"github.com/portainer/portainer/api/edge"
+
+	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
 )
@@ -39,68 +41,70 @@ func NewDockerComposeYAML(fileContent string, credentials []edge.RegistryCredent
 	}
 }
 
-func (y *DockerComposeYaml) AddCredentialsAsEnvForSpecificService(serviceName string) (string, error) {
+func (y *DockerComposeYaml) AddCredentialsAsEnvForSpecificService(serviceName string) ([]portainer.Pair, string, error) {
 	var compose Compose
 
 	// Parse file content to the object with yaml struct
 	err := yaml.Unmarshal([]byte(y.FileContent), &compose)
 	if err != nil {
-		return "", errors.Wrap(err, "Error while unmarshalling the docker compose file content")
+		return nil, "", errors.Wrap(err, "Error while unmarshalling the docker compose file content")
 	}
 
 	if !validateComposeFile(&compose, serviceName) {
-		return "", errors.New("Failed to validate the compose file content")
+		return nil, "", errors.New("Failed to validate the compose file content")
 	}
 
-	// Extract registry server url from compose object
-	service, ok := compose.Services[serviceName]
-	if !ok {
-		return "", fmt.Errorf("failed to find the service: %s", serviceName)
-	}
+	// Extract registry server url from compose object, the service existence is already validated
+	service := compose.Services[serviceName]
 
 	serverUrl, err := extractRegistryServerUrl(service.Image)
 	if err != nil {
-		return "", err
+		return nil, "", err
 	}
 
-	// Generate envs
-	envs := make(map[string]string)
+	envVars := make([]portainer.Pair, 0)
 	if y.awsConfig != nil {
 		log.Info().Msg("using local AWS config for credential lookup")
 
 		// Exchange ECR credential with ECR certificate
-		c, err := aws.DoAWSIAMRolesAnywhereAuthAndGetECRCredentials(serverUrl, y.awsConfig)
+		awsRegistryCredentials, err := aws.DoAWSIAMRolesAnywhereAuthAndGetECRCredentials(serverUrl, y.awsConfig)
 		if err != nil {
 			// It doesn't need to fallback the registry here, so it is unnecessary to check ErrNoCredential error
-			return "", err
+			return nil, "", err
 		}
 
-		if c != nil {
-			log.Info().Str("registry_server_url", serverUrl).Msg("")
+		log.Info().Str("registry_server_url", serverUrl).Msg("")
 
-			envs["REGISTRY_USED"] = "1"
-			// hardcode username for aws ecr registry
-			// @https://docs.aws.amazon.com/cli/latest/reference/ecr/get-login-password.html#examples
-			envs["REGISTRY_USERNAME"] = "AWS"
-			envs["REGISTRY_PASSWORD"] = c.Secret
-		}
+		// hardcode username for aws ecr registry
+		// @https://docs.aws.amazon.com/cli/latest/reference/ecr/get-login-password.html#examples
+		envVars = append(envVars, portainer.Pair{Name: "REGISTRY_USERNAME", Value: "AWS"})
+		envVars = append(envVars, portainer.Pair{Name: "REGISTRY_PASSWORD", Value: awsRegistryCredentials.Secret})
 	} else if len(y.RegistryCredentials) > 0 {
 		log.Info().Msg("using private registry credential")
-
 		for _, cred := range y.RegistryCredentials {
-			if serverUrl == cred.ServerURL {
-				log.Info().Str("registry_server_url", cred.ServerURL).Msg("")
-
-				envs["REGISTRY_USED"] = "1"
-				envs["REGISTRY_USERNAME"] = cred.Username
-				envs["REGISTRY_PASSWORD"] = cred.Secret
-
-				break
+			if serverUrl != cred.ServerURL {
+				continue
 			}
+			log.Info().Str("registry_server_url", cred.ServerURL).Msg("")
+			envVars = append(envVars, portainer.Pair{Name: "REGISTRY_USERNAME", Value: cred.Username})
+			envVars = append(envVars, portainer.Pair{Name: "REGISTRY_PASSWORD", Value: cred.Secret})
+
+			break
 		}
 	}
 
-	return updateServiceWithEnv(compose, serviceName, envs)
+	// These env vars will be interpolated by the compose library in the `ComposeDeployer`
+	composeEnvVars := make(map[string]string)
+	if len(envVars) > 0 {
+		composeEnvVars["REGISTRY_USED"] = "1"
+		for _, env := range envVars {
+			composeEnvVars[env.Name] = fmt.Sprintf("${%s}", env.Name)
+		}
+	}
+
+	updateComposeFile, err := updateServiceWithEnv(compose, serviceName, composeEnvVars)
+
+	return envVars, updateComposeFile, err
 }
 
 func updateServiceWithEnv(compose Compose, serviceName string, envs map[string]string) (string, error) {

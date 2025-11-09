@@ -4,8 +4,55 @@ import (
 	"strings"
 	"testing"
 
+	portainer "github.com/portainer/portainer/api"
+	"github.com/portainer/portainer/api/edge"
+
 	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
+
+func TestAddCredentialsAsEnvForSpecificService(t *testing.T) {
+	composeFileContent := `
+version: "3"
+services:
+  updater:
+    image: registry.example.com/portainer/updater:latest
+`
+	registryCredentials := []edge.RegistryCredentials{
+		{
+			ServerURL: "registry.example.com",
+			Username:  "user123",
+			Secret:    "pass123",
+		},
+	}
+
+	dockerComposeYAML := NewDockerComposeYAML(composeFileContent, registryCredentials, nil)
+	envVars, updatedYAML, err := dockerComposeYAML.AddCredentialsAsEnvForSpecificService("updater")
+
+	require.NoError(t, err)
+
+	expectedEnv := map[string]string{
+		"REGISTRY_USERNAME": "user123",
+		"REGISTRY_PASSWORD": "pass123",
+	}
+	assert.Len(t, envVars, len(expectedEnv))
+	for _, pair := range envVars {
+		expectedVal, exists := expectedEnv[pair.Name]
+		assert.True(t, exists, "unexpected env var: %s", pair.Name)
+		assert.Equal(t, expectedVal, pair.Value, "unexpected value for env var %s", pair.Name)
+	}
+
+	var compose Compose
+	require.NoError(t, yaml.Unmarshal([]byte(updatedYAML), &compose))
+
+	updater, ok := compose.Services["updater"]
+	require.True(t, ok, "updater service not found in updated YAML")
+	assert.Contains(t, updater.Environment, "REGISTRY_USED=1")
+	assert.Contains(t, updater.Environment, "REGISTRY_USERNAME=${REGISTRY_USERNAME}")
+	assert.Contains(t, updater.Environment, "REGISTRY_PASSWORD=${REGISTRY_PASSWORD}")
+}
 
 func TestUpdateServiceWithEnv(t *testing.T) {
 	compose := Compose{
@@ -118,4 +165,122 @@ func TestExtractRegistryServerUrl(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAddCredentialsAsEnvForSpecificService_InvalidYAML(t *testing.T) {
+	composeFileContent := `::: definitely not valid yaml :::`
+	dockerComposeYAML := NewDockerComposeYAML(composeFileContent, nil, nil)
+
+	envVars, updatedYAML, err := dockerComposeYAML.AddCredentialsAsEnvForSpecificService("updater")
+
+	assertBasicErrorResult(t, envVars, updatedYAML, err)
+	assert.Contains(t, err.Error(), "unmarshalling")
+}
+
+func TestAddCredentialsAsEnvForSpecificService_MissingVersion(t *testing.T) {
+	composeFileContent := `
+services:
+  updater:
+    image: registry.example.com/portainer/updater:latest
+`
+	dockerComposeYAML := NewDockerComposeYAML(composeFileContent, nil, nil)
+
+	envVars, updatedYAML, err := dockerComposeYAML.AddCredentialsAsEnvForSpecificService("updater")
+
+	assertBasicErrorResult(t, envVars, updatedYAML, err)
+	assert.Equal(t, "Failed to validate the compose file content", err.Error())
+}
+
+func TestAddCredentialsAsEnvForSpecificService_NoServices(t *testing.T) {
+	// Version present, but no services key
+	composeFileContent := `
+version: "3"
+`
+	dockerComposeYAML := NewDockerComposeYAML(composeFileContent, nil, nil)
+
+	envVars, updatedYAML, err := dockerComposeYAML.AddCredentialsAsEnvForSpecificService("updater")
+
+	assertBasicErrorResult(t, envVars, updatedYAML, err)
+	assert.Equal(t, "Failed to validate the compose file content", err.Error())
+}
+
+func TestAddCredentialsAsEnvForSpecificService_ServiceNotFound(t *testing.T) {
+	// Service name requested does not exist
+	composeFileContent := `
+version: "3"
+services:
+  somethingelse:
+    image: registry.example.com/portainer/updater:latest
+`
+	dockerComposeYAML := NewDockerComposeYAML(composeFileContent, nil, nil)
+
+	envVars, updatedYAML, err := dockerComposeYAML.AddCredentialsAsEnvForSpecificService("updater")
+
+	assertBasicErrorResult(t, envVars, updatedYAML, err)
+	assert.Equal(t, "Failed to validate the compose file content", err.Error(), "validation should fail because service is missing")
+}
+
+func TestAddCredentialsAsEnvForSpecificService_EmptyImageName(t *testing.T) {
+	// Service present but image is empty -> extractRegistryServerUrl should error
+	composeFileContent := `
+version: "3"
+services:
+  updater:
+    image: ""
+`
+	dockerComposeYAML := NewDockerComposeYAML(composeFileContent, nil, nil)
+
+	envVars, updatedYAML, err := dockerComposeYAML.AddCredentialsAsEnvForSpecificService("updater")
+
+	assertBasicErrorResult(t, envVars, updatedYAML, err)
+	assert.Equal(t, "No image name provided", err.Error())
+}
+
+func TestAddCredentialsAsEnvForSpecificService_NoMatchingCredentials(t *testing.T) {
+	// Credentials provided but registry does not match service image -> should not error, just no env vars injected
+	composeFileContent := `
+version: "3"
+services:
+  updater:
+    image: other.registry.example.com/portainer/updater:latest
+`
+	registryCredentials := []edge.RegistryCredentials{
+		{
+			ServerURL: "registry.example.com",
+			Username:  "user123",
+			Secret:    "pass123",
+		},
+	}
+
+	dockerComposeYAML := NewDockerComposeYAML(composeFileContent, registryCredentials, nil)
+	envVars, updatedYAML, err := dockerComposeYAML.AddCredentialsAsEnvForSpecificService("updater")
+	require.NoError(t, err)
+
+	// No env vars returned (no match)
+	require.Empty(t, envVars)
+
+	// Updated YAML should not contain placeholder environment variables
+	assert.NotContains(t, updatedYAML, "REGISTRY_USED=1")
+	assert.NotContains(t, updatedYAML, "REGISTRY_USERNAME=${REGISTRY_USERNAME}")
+	assert.NotContains(t, updatedYAML, "REGISTRY_PASSWORD=${REGISTRY_PASSWORD}")
+}
+
+func TestUpdateServiceWithEnv_ServiceNotFound(t *testing.T) {
+	compose := Compose{
+		Version:  "3",
+		Services: map[string]Service{}, // empty map
+	}
+
+	updatedYAML, err := updateServiceWithEnv(compose, "updater", map[string]string{"X": "Y"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to find the service: updater")
+	assert.Empty(t, updatedYAML)
+}
+
+// Helper to ensure common assertions on error cases.
+func assertBasicErrorResult(t *testing.T, envVars []portainer.Pair, updatedYAML string, err error) {
+	t.Helper()
+	require.Error(t, err)
+	assert.Empty(t, updatedYAML, "updatedYAML should be empty on error")
+	assert.Nil(t, envVars, "envVars should be nil on error")
 }

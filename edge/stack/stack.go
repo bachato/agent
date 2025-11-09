@@ -69,12 +69,16 @@ func (manager *StackManager) addRegistryToEntryFile(stackPayload *edge.StackPayl
 			var err error
 			yml := yaml.NewDockerComposeYAML(*fileContent, stackPayload.RegistryCredentials, manager.awsConfig)
 
-			*fileContent, err = yml.AddCredentialsAsEnvForSpecificService("updater")
+			var envVars []portainer.Pair
+			envVars, *fileContent, err = yml.AddCredentialsAsEnvForSpecificService("updater")
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to get registry credentials from update service: %w", err)
 			}
+			// This ensures that the compose file does not contain sensitive information such as registry credentials, at the
+			// point of persistence. Instead, the credentials are passed as environment variables to the stack deployer, which will then
+			// interpolate them into the compose spec.
+			stackPayload.EnvVars = append(stackPayload.EnvVars, envVars...)
 		}
-
 	case EngineTypeKubernetes:
 		if len(stackPayload.RegistryCredentials) > 0 {
 			yml := yaml.NewKubernetesYAML(*fileContent, stackPayload.RegistryCredentials)
@@ -134,7 +138,6 @@ func (manager *StackManager) processStack(stackID int, stackStatus client.StackS
 	stack.RetryDeploy = stackPayload.RetryDeploy
 	stack.RetryPeriod = stackPayload.RetryPeriod
 	stack.ForceUpdate = stackPayload.ForceUpdate
-	stack.EnvVars = append(stackPayload.EnvVars, edgeIdPair)
 	stack.SupportRelativePath = stackPayload.SupportRelativePath
 	stack.AlwaysCloneGitRepoForRelativePath = stackPayload.AlwaysCloneGitRepoForRelativePath
 	stack.FilesystemPath = stackPayload.FilesystemPath
@@ -156,6 +159,8 @@ func (manager *StackManager) processStack(stackID int, stackStatus client.StackS
 	if err := manager.addRegistryToEntryFile(stackPayload); err != nil {
 		return err
 	}
+	// `manager.addRegistryToEntryFile` may have added new env vars, so we need to reassign them here
+	stack.EnvVars = append(stackPayload.EnvVars, edgeIdPair)
 
 	if err := filesystem.PersistDir(stack.FileFolder, stackPayload.DirEntries); err != nil {
 		return err

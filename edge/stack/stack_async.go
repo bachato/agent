@@ -8,6 +8,7 @@ import (
 	portainer "github.com/portainer/portainer/api"
 	"github.com/portainer/portainer/api/edge"
 	"github.com/portainer/portainer/api/filesystem"
+
 	"github.com/rs/zerolog/log"
 )
 
@@ -103,7 +104,6 @@ func (manager *StackManager) buildDeployerParams(stackPayload edge.StackPayload,
 	stack.FilesystemPath = stackPayload.FilesystemPath
 	stack.FileName = stackPayload.EntryFileName
 	stack.FileFolder = getStackFileFolder(stack)
-	stack.EnvVars = append(stackPayload.EnvVars, edgeIdPair)
 	stack.Namespace = stackPayload.Namespace
 	stack.EdgeUpdateID = stackPayload.EdgeUpdateID
 
@@ -120,6 +120,8 @@ func (manager *StackManager) buildDeployerParams(stackPayload edge.StackPayload,
 	if err := manager.addRegistryToEntryFile(&stackPayload); err != nil {
 		return err
 	}
+	// `manager.addRegistryToEntryFile` may have added new env vars, so we need to reassign them here
+	stack.EnvVars = append(stackPayload.EnvVars, edgeIdPair)
 
 	if !deleteStack {
 		if err := filesystem.PersistDir(stack.FileFolder, stackPayload.DirEntries); err != nil {

@@ -21,11 +21,11 @@ import (
 	"github.com/portainer/portainer/api/edge"
 	"github.com/portainer/portainer/api/filesystem"
 	"github.com/portainer/portainer/pkg/libstack"
-	"github.com/rs/zerolog"
 
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	gomock "go.uber.org/mock/gomock"
+	"go.uber.org/mock/gomock"
 )
 
 func TestStackManager_pullImages(t *testing.T) {
@@ -725,4 +725,59 @@ func getContainerEnv(containerName string) map[string]string {
 	}
 
 	return vars
+}
+
+func TestAddRegistryToEntryFile_Docker(t *testing.T) {
+	manager := NewStackManager(nil, "", nil, "edge_id", nil)
+	manager.engineType = EngineTypeDockerStandalone // directly set to avoid deployer setup
+
+	composeContent := `version: "3"
+services:
+  updater:
+    image: myregistry.local/portainer/updater:latest
+`
+
+	expectedUsername := "user"
+	expectedPassword := "secret"
+	stackPayload := edge.StackPayload{
+		ID:            42,
+		Name:          "test-registry",
+		EntryFileName: filesystem.ComposeFileDefaultName,
+		EdgeUpdateID:  1, // required to trigger credentials injection
+		DirEntries: []filesystem.DirEntry{
+			{
+				Name:    filesystem.ComposeFileDefaultName,
+				IsFile:  true,
+				Content: composeContent,
+			},
+		},
+		RegistryCredentials: []edge.RegistryCredentials{
+			{
+				ServerURL: "myregistry.local",
+				Username:  expectedUsername,
+				Secret:    expectedPassword,
+			},
+		},
+	}
+
+	err := manager.addRegistryToEntryFile(&stackPayload)
+	require.NoError(t, err)
+	require.Nil(t, manager.awsConfig, "awsConfig should be nil to ensure AWS path not used")
+
+	var registryUsername, registryPassword string
+	for _, p := range stackPayload.EnvVars {
+		if p.Name == "REGISTRY_USERNAME" {
+			registryUsername = p.Value
+		}
+		if p.Name == "REGISTRY_PASSWORD" {
+			registryPassword = p.Value
+		}
+	}
+	require.Equal(t, expectedUsername, registryUsername)
+	require.Equal(t, expectedPassword, registryPassword)
+
+	updatedContent := stackPayload.DirEntries[0].Content
+	require.Contains(t, updatedContent, "REGISTRY_USED=1")
+	require.Contains(t, updatedContent, "REGISTRY_USERNAME=${REGISTRY_USERNAME}")
+	require.Contains(t, updatedContent, "REGISTRY_PASSWORD=${REGISTRY_PASSWORD}")
 }
