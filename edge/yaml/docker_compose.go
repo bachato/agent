@@ -64,23 +64,26 @@ func (y *DockerComposeYaml) AddCredentialsAsEnvForSpecificService(serviceName st
 
 	envVars := make([]portainer.Pair, 0)
 	if y.awsConfig != nil {
-		log.Info().Msg("using local AWS config for credential lookup")
+		log.Info().Msg("using local AWS IAMRA config for credential lookup for compose")
 
-		// Exchange ECR credential with ECR certificate
+		// Use client certificate to authenticate with IAMRA and fetch temporary ECR credentials
 		awsRegistryCredentials, err := aws.DoAWSIAMRolesAnywhereAuthAndGetECRCredentials(serverUrl, y.awsConfig)
-		if err != nil {
-			// It doesn't need to fallback the registry here, so it is unnecessary to check ErrNoCredential error
-			return nil, "", err
+		if err == nil && awsRegistryCredentials != nil {
+			log.Info().Str("registry_server_url", serverUrl).Msg("successfully fetched ECR credentials for private ECR repository setting username and password env")
+
+			// hardcode username for aws ecr registry
+			// @https://docs.aws.amazon.com/cli/latest/reference/ecr/get-login-password.html#examples
+			envVars = append(envVars, portainer.Pair{Name: "REGISTRY_USERNAME", Value: "AWS"})
+			envVars = append(envVars, portainer.Pair{Name: "REGISTRY_PASSWORD", Value: awsRegistryCredentials.Secret})
+		} else if errors.Is(err, aws.ErrNotPrivateECRRepo) {
+			log.Info().Str("registry_server_url", serverUrl).Msg("repository url is not a private ECR repository, continuing without credentials")
+		} else {
+			log.Error().Err(err).Str("registry_server_url", serverUrl).Msg("failed to fetch ECR credentials for private ECR repository, failing deployment")
+			return nil, "", fmt.Errorf("failed to fetch ECR credentials for private ECR repository: %w", err)
 		}
-
-		log.Info().Str("registry_server_url", serverUrl).Msg("")
-
-		// hardcode username for aws ecr registry
-		// @https://docs.aws.amazon.com/cli/latest/reference/ecr/get-login-password.html#examples
-		envVars = append(envVars, portainer.Pair{Name: "REGISTRY_USERNAME", Value: "AWS"})
-		envVars = append(envVars, portainer.Pair{Name: "REGISTRY_PASSWORD", Value: awsRegistryCredentials.Secret})
 	} else if len(y.RegistryCredentials) > 0 {
-		log.Info().Msg("using private registry credential")
+		log.Info().Msg("using static private registry credential")
+
 		for _, cred := range y.RegistryCredentials {
 			if serverUrl != cred.ServerURL {
 				continue
@@ -91,6 +94,8 @@ func (y *DockerComposeYaml) AddCredentialsAsEnvForSpecificService(serviceName st
 
 			break
 		}
+	} else {
+		log.Info().Msg("no registry credentials found, continuing without credentials")
 	}
 
 	// These env vars will be interpolated by the compose library in the `ComposeDeployer`

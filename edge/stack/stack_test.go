@@ -14,7 +14,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/portainer/agent"
 	"github.com/portainer/agent/deployer"
+	"github.com/portainer/agent/edge/aws"
 	"github.com/portainer/agent/edge/client"
 	"github.com/portainer/agent/internals/mocks"
 	portainer "github.com/portainer/portainer/api"
@@ -780,4 +782,84 @@ services:
 	require.Contains(t, updatedContent, "REGISTRY_USED=1")
 	require.Contains(t, updatedContent, "REGISTRY_USERNAME=${REGISTRY_USERNAME}")
 	require.Contains(t, updatedContent, "REGISTRY_PASSWORD=${REGISTRY_PASSWORD}")
+}
+
+func TestEnsureRegCreds(t *testing.T) {
+	manager := setupStackManager(t)
+
+	t.Run("standard credentials get added", func(t *testing.T) {
+		stack := &edgeStack{
+			StackPayload: edge.StackPayload{
+				RegistryCredentials: []edge.RegistryCredentials{
+					{
+						ServerURL: "https://registry.example.com",
+						Username:  "username",
+						Secret:    "secret",
+					},
+				},
+			},
+		}
+
+		rcs, err := manager.ensureRegCreds(stack)
+		require.NoError(t, err)
+		require.Len(t, rcs, 1)
+		require.Equal(t, "username", rcs[0].Username)
+		require.Equal(t, "secret", rcs[0].Secret)
+	})
+
+	awsConfig := &agent.AWSConfig{
+		RoleARN:        "role",
+		TrustAnchorARN: "trust-anchor",
+		ProfileARN:     "profile",
+		Region:         "us-east-1",
+	}
+
+	t.Run("aws config but not private ECR repository", func(t *testing.T) {
+		manager.awsConfig = awsConfig
+		stack := &edgeStack{
+			StackPayload: edge.StackPayload{
+				RegistryCredentials: []edge.RegistryCredentials{
+					{
+						ServerURL: "https://registry.example.com",
+					},
+					{
+						ServerURL: "public.ecr.aws/my-repo",
+					},
+					{
+						ServerURL: "docker.io/library/ubuntu:latest",
+					},
+				},
+			},
+		}
+
+		// invalid credentials, but not a private ECR repository, so IAMRA should be skipped
+		rcs, err := manager.ensureRegCreds(stack)
+		require.NoError(t, err)
+		require.Empty(t, rcs)
+	})
+
+	t.Run("aws config and private ECR repository fails", func(t *testing.T) {
+		manager.awsConfig = awsConfig
+		stack := &edgeStack{
+			StackPayload: edge.StackPayload{
+				RegistryCredentials: []edge.RegistryCredentials{
+					{
+						ServerURL: "123456789012.dkr.ecr.us-east-1.amazonaws.com/my-repo:foo",
+					},
+				},
+			},
+		}
+
+		// stop retrying the IAMRA login for this test
+		maxRetries := aws.RetrySettings.MaxRetries
+		defer func() {
+			aws.RetrySettings.MaxRetries = maxRetries
+		}()
+		aws.RetrySettings.MaxRetries = 1
+
+		// the test does not have valid credentials, this is replicating a situation that should not continue since a
+		// private ECR repo is required but it is impossible to get valid credentials
+		_, err := manager.ensureRegCreds(stack)
+		require.Error(t, err)
+	})
 }
