@@ -145,6 +145,8 @@ func (manager *StackManager) processStack(stackID int, stackStatus client.StackS
 	stack.FileFolder = getStackFileFolder(stack)
 	stack.RollbackTo = stackPayload.RollbackTo
 	stack.EdgeUpdateID = stackPayload.EdgeUpdateID
+	stack.CreatedBy = stackPayload.CreatedBy
+	stack.CreatedByUserId = stackPayload.CreatedByUserId
 
 	// When to force recreate the stack
 	// 1. When the stack is updated by GitOps with the ForceUpdate flag set to true
@@ -161,6 +163,11 @@ func (manager *StackManager) processStack(stackID int, stackStatus client.StackS
 	}
 	// `manager.addRegistryToEntryFile` may have added new env vars, so we need to reassign them here
 	stack.EnvVars = append(stackPayload.EnvVars, edgeIdPair)
+
+	// Apply Kubernetes labels to manifest if this is a Kubernetes edge stack
+	if err := manager.applyK8sLabelsIfNeeded(stack, stackPayload.DirEntries); err != nil {
+		return err
+	}
 
 	if err := filesystem.PersistDir(stack.FileFolder, stackPayload.DirEntries); err != nil {
 		return err

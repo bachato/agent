@@ -112,6 +112,8 @@ func (manager *StackManager) buildDeployerParams(stackPayload edge.StackPayload,
 	// 2. When the stack is manually forced to re-pull image and redeploy
 	stack.DeployerOptionsPayload.ForceRecreate = stackPayload.ForceUpdate || stackPayload.DeployerOptionsPayload.ForceRecreate
 	stack.RePullImage = stackPayload.RePullImage
+	stack.CreatedBy = stackPayload.CreatedBy
+	stack.CreatedByUserId = stackPayload.CreatedByUserId
 
 	if err := filesystem.DecodeDirEntries(stackPayload.DirEntries); err != nil {
 		return err
@@ -124,6 +126,11 @@ func (manager *StackManager) buildDeployerParams(stackPayload edge.StackPayload,
 	stack.EnvVars = append(stackPayload.EnvVars, edgeIdPair)
 
 	if !deleteStack {
+		// Apply Kubernetes labels to manifest if this is a Kubernetes edge stack
+		if err := manager.applyK8sLabelsIfNeeded(stack, stackPayload.DirEntries); err != nil {
+			return err
+		}
+
 		if err := filesystem.PersistDir(stack.FileFolder, stackPayload.DirEntries); err != nil {
 			return err
 		}
