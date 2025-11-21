@@ -272,6 +272,13 @@ func (service *PollService) processEdgeStackCommand(ctx context.Context, command
 	}
 
 	switch command.Operation {
+	case "add", "replace", "remove":
+		if ac, ok := service.portainerClient.(*client.PortainerAsyncClient); ok {
+			ac.SetPendingCommand(portainer.EdgeStackID(stackData.ID), stackData.Version, command.Timestamp)
+		}
+	}
+
+	switch command.Operation {
 	case "add", "replace":
 		if err := service.edgeStackManager.DeployStack(ctx, stackData); err != nil {
 			return service.portainerClient.SetEdgeStackStatus(stackData.ID, stackData.Version, portainer.EdgeStackStatusError, stackData.RollbackTo, fmt.Errorf("failed to deploy async stack: %w", err).Error())

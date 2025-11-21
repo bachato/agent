@@ -31,6 +31,11 @@ import (
 	"github.com/wI2L/jsondiff"
 )
 
+type versionAndTS struct {
+	version   int
+	timestamp time.Time
+}
+
 // PortainerAsyncClient is used to execute HTTP requests using only the /api/entrypoint/async api endpoint
 type PortainerAsyncClient struct {
 	version string
@@ -42,7 +47,8 @@ type PortainerAsyncClient struct {
 	edgeID                  string
 	edgeKey                 string
 	agentPlatformIdentifier agent.ContainerPlatform
-	commandTimestamp        *time.Time
+	commandTimestamp        time.Time
+	pendingESCommandsTS     map[portainer.EdgeStackID]versionAndTS
 	metaFields              agent.EdgeMetaFields
 
 	lastAsyncResponse AsyncResponse
@@ -74,8 +80,6 @@ func NewPortainerAsyncClient(
 		o(clientOpts)
 	}
 
-	initialCommandTimestamp := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
-
 	return &PortainerAsyncClient{
 		version:                 clientOpts.version,
 		serverAddress:           serverAddress,
@@ -85,7 +89,8 @@ func NewPortainerAsyncClient(
 		edgeKey:                 edgeKey,
 		httpClient:              httpClient,
 		agentPlatformIdentifier: containerPlatform,
-		commandTimestamp:        &initialCommandTimestamp,
+		commandTimestamp:        time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC),
+		pendingESCommandsTS:     make(map[portainer.EdgeStackID]versionAndTS),
 		metaFields:              metaFields,
 		dockerSnapshotter:       clientOpts.dockerSnapshotter,
 		liveLogCollectors:       make(map[string]*LiveLogCollector),
@@ -245,7 +250,18 @@ func (client *PortainerAsyncClient) GetEnvironmentStatus(flags ...string) (*Poll
 	}
 
 	if doCommand {
-		payload.CommandTimestamp = client.commandTimestamp
+		minTS := client.commandTimestamp
+
+		// Send a timestamp slightly smaller than the earliest pending command
+		// timestamp to ensure it gets resent if the Agent crashes before
+		// processing it
+		for _, ts := range client.pendingESCommandsTS {
+			if !ts.timestamp.After(minTS) {
+				minTS = ts.timestamp.Add(-time.Microsecond)
+			}
+		}
+
+		payload.CommandTimestamp = &minTS
 	}
 
 	if len(client.metaFields.EdgeGroupsIDs) > 0 || len(client.metaFields.TagsIDs) > 0 || client.metaFields.EnvironmentGroupID > 0 {
@@ -266,6 +282,12 @@ func (client *PortainerAsyncClient) GetEnvironmentStatus(flags ...string) (*Poll
 	}
 
 	client.setEndpointIDFn(asyncResponse.EndpointID)
+
+	// Filter out already received commands
+	asyncResponse.Commands = slices.DeleteFunc(asyncResponse.Commands, func(e AsyncCommand) bool {
+		return !e.Timestamp.After(client.commandTimestamp)
+	})
+
 
 	response := &PollStatusResponse{
 		AsyncCommands:    asyncResponse.Commands,
@@ -378,6 +400,13 @@ func (client *PortainerAsyncClient) SetEdgeStackStatus(edgeStackID, version int,
 		status = []portainer.EdgeStackDeploymentStatus{}
 	}
 
+	switch edgeStackStatus {
+	case portainer.EdgeStackStatusRunning, portainer.EdgeStackStatusRemoved, portainer.EdgeStackStatusCompleted, portainer.EdgeStackStatusError:
+		if pc, ok := client.pendingESCommandsTS[portainer.EdgeStackID(edgeStackID)]; ok && pc.version == version {
+			delete(client.pendingESCommandsTS, portainer.EdgeStackID(edgeStackID))
+		}
+	}
+
 	if edgeStackStatus == portainer.EdgeStackStatusRemoved {
 		status = []portainer.EdgeStackDeploymentStatus{}
 	} else {
@@ -410,7 +439,7 @@ func (client *PortainerAsyncClient) SetEdgeJobStatus(edgeJobStatus agent.EdgeJob
 }
 
 func (client *PortainerAsyncClient) SetLastCommandTimestamp(timestamp time.Time) {
-	client.commandTimestamp = &timestamp
+	client.commandTimestamp = timestamp
 }
 
 func (client *PortainerAsyncClient) DeleteEdgeStackStatus(edgeStackID int) error {
@@ -447,6 +476,11 @@ func (client *PortainerAsyncClient) EnqueueLogCollectionForStack(logCmd LogComma
 	defer client.nextSnapshotMutex.Unlock()
 
 	client.stackLogCollectionQueue = append(client.stackLogCollectionQueue, logCmd)
+}
+
+// SetPendingCommand stores the latest command timestamp for a given stack ID
+func (client *PortainerAsyncClient) SetPendingCommand(id portainer.EdgeStackID, version int, timestamp time.Time) {
+	client.pendingESCommandsTS[id] = versionAndTS{version: version, timestamp: timestamp}
 }
 
 func (client *PortainerAsyncClient) createDockerSnapshot(payload *AsyncRequest, currentSnapshot *snapshot) {
