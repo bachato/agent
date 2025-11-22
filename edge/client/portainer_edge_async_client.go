@@ -49,6 +49,7 @@ type PortainerAsyncClient struct {
 	agentPlatformIdentifier agent.ContainerPlatform
 	commandTimestamp        time.Time
 	pendingESCommandsTS     map[portainer.EdgeStackID]versionAndTS
+	pendingCmdsMutex        sync.Mutex
 	metaFields              agent.EdgeMetaFields
 
 	lastAsyncResponse AsyncResponse
@@ -253,13 +254,15 @@ func (client *PortainerAsyncClient) GetEnvironmentStatus(flags ...string) (*Poll
 		minTS := client.commandTimestamp
 
 		// Send a timestamp slightly smaller than the earliest pending command
-		// timestamp to ensure it gets resent if the Agent crashes before
-		// processing it
+		// timestamp to ensure it gets re-sent if the Agent crashes before
+		// fully processing it
+		client.pendingCmdsMutex.Lock()
 		for _, ts := range client.pendingESCommandsTS {
 			if !ts.timestamp.After(minTS) {
 				minTS = ts.timestamp.Add(-time.Microsecond)
 			}
 		}
+		client.pendingCmdsMutex.Unlock()
 
 		payload.CommandTimestamp = &minTS
 	}
@@ -402,9 +405,11 @@ func (client *PortainerAsyncClient) SetEdgeStackStatus(edgeStackID, version int,
 
 	switch edgeStackStatus {
 	case portainer.EdgeStackStatusRunning, portainer.EdgeStackStatusRemoved, portainer.EdgeStackStatusCompleted, portainer.EdgeStackStatusError:
+		client.pendingCmdsMutex.Lock()
 		if pc, ok := client.pendingESCommandsTS[portainer.EdgeStackID(edgeStackID)]; ok && pc.version == version {
 			delete(client.pendingESCommandsTS, portainer.EdgeStackID(edgeStackID))
 		}
+		client.pendingCmdsMutex.Unlock()
 	}
 
 	if edgeStackStatus == portainer.EdgeStackStatusRemoved {
@@ -480,6 +485,9 @@ func (client *PortainerAsyncClient) EnqueueLogCollectionForStack(logCmd LogComma
 
 // SetPendingCommand stores the latest command timestamp for a given stack ID
 func (client *PortainerAsyncClient) SetPendingCommand(id portainer.EdgeStackID, version int, timestamp time.Time) {
+	client.pendingCmdsMutex.Lock()
+	defer client.pendingCmdsMutex.Unlock()
+
 	client.pendingESCommandsTS[id] = versionAndTS{version: version, timestamp: timestamp}
 }
 
