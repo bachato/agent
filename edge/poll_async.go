@@ -170,6 +170,10 @@ func (service *PollService) startStatusPollLoopAsync() {
 }
 
 func (service *PollService) pollAsync(doSnapshot, doCommand bool) error {
+	if service.edgeID == "" {
+		return errors.New("edge ID is not set")
+	}
+
 	flags := []string{}
 
 	if doSnapshot {
