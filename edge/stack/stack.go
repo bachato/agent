@@ -378,16 +378,6 @@ func (manager *StackManager) checkStackStatus(ctx context.Context, stackName str
 	}
 
 	status, statusMessage := manager.waitForStatus(ctx, stackName, requiredStatus, options)
-	if stack.Status != StatusDeployed {
-		log.Debug().
-			Int("stack_identifier", stack.ID).
-			Str("stack_name", stackName).
-			Str("required_status", string(requiredStatus)).
-			Str("status", string(status)).
-			Str("status_message", statusMessage).
-			Str("old_status", stack.Status.String()).
-			Msg("stack status")
-	}
 
 	// if the stack is an edge update, and the status message contains a context deadline exceeded error,
 	// the update takes longer than expected, and we need to ignore the status, and let it
