@@ -10,11 +10,13 @@ import (
 	"github.com/portainer/agent"
 	"github.com/portainer/agent/edge/aws"
 	"github.com/portainer/agent/edge/client"
+	"github.com/portainer/agent/edge/policies"
 	"github.com/portainer/agent/edge/scheduler"
 	"github.com/portainer/agent/edge/stack"
 	"github.com/portainer/agent/kubernetes"
 	portainer "github.com/portainer/portainer/api"
 	"github.com/portainer/portainer/api/filesystem"
+	"github.com/portainer/portainer/pkg/libhelm/sdk"
 
 	"github.com/rs/zerolog/log"
 )
@@ -122,12 +124,15 @@ func (manager *Manager) Start() error {
 	manager.logsManager = scheduler.NewLogsManager(portainerClient)
 	manager.logsManager.Start()
 
+	policyManager := policies.NewPolicyManager(portainerClient, manager.kubeClient, sdk.NewHelmSDKPackageManager())
+
 	pollService, err := newPollService(
 		manager,
 		manager.stackManager,
 		manager.logsManager,
 		pollServiceConfig,
 		portainerClient,
+		policyManager,
 		manager.agentOptions.EdgeAsyncMode,
 	)
 	if err != nil {

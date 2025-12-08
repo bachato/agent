@@ -17,6 +17,7 @@ import (
 	client "github.com/portainer/agent/edge/client"
 	portainer "github.com/portainer/portainer/api"
 	edge "github.com/portainer/portainer/api/edge"
+
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -54,6 +55,22 @@ func (m *MockPortainerClient) EnqueueLogCollectionForStack(logCmd client.LogComm
 func (mr *MockPortainerClientMockRecorder) EnqueueLogCollectionForStack(logCmd any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnqueueLogCollectionForStack", reflect.TypeOf((*MockPortainerClient)(nil).EnqueueLogCollectionForStack), logCmd)
+}
+
+// GetCharts mocks base method.
+func (m *MockPortainerClient) GetCharts(chartNames []string) ([]portainer.PolicyChartBundle, portainer.RestoreSettingsBundle, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetCharts", chartNames)
+	ret0, _ := ret[0].([]portainer.PolicyChartBundle)
+	ret1, _ := ret[1].(portainer.RestoreSettingsBundle)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// GetCharts indicates an expected call of GetCharts.
+func (mr *MockPortainerClientMockRecorder) GetCharts(chartNames any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCharts", reflect.TypeOf((*MockPortainerClient)(nil).GetCharts), chartNames)
 }
 
 // GetEdgeConfig mocks base method.
@@ -184,4 +201,18 @@ func (m *MockPortainerClient) SetTimeout(t time.Duration) {
 func (mr *MockPortainerClientMockRecorder) SetTimeout(t any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetTimeout", reflect.TypeOf((*MockPortainerClient)(nil).SetTimeout), t)
+}
+
+// UpdatePolicyChartStatuses mocks base method.
+func (m *MockPortainerClient) UpdatePolicyChartStatuses(statuses []portainer.PolicyChartStatus) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdatePolicyChartStatuses", statuses)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdatePolicyChartStatuses indicates an expected call of UpdatePolicyChartStatuses.
+func (mr *MockPortainerClientMockRecorder) UpdatePolicyChartStatuses(statuses any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdatePolicyChartStatuses", reflect.TypeOf((*MockPortainerClient)(nil).UpdatePolicyChartStatuses), statuses)
 }

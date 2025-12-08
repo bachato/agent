@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -317,6 +318,43 @@ func (client *PortainerEdgeClient) SetEdgeStackStatus(
 	return nil
 }
 
+type HelmChartStatusPayload struct {
+	Statuses []portainer.PolicyChartStatus `json:"chartStatuses"`
+}
+
+func (client *PortainerEdgeClient) UpdatePolicyChartStatuses(statuses []portainer.PolicyChartStatus) error {
+	payload := HelmChartStatusPayload{
+		Statuses: statuses,
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	requestURL := fmt.Sprintf("%s/api/endpoints/%d/edge/charts/statuses", client.serverAddress, client.getEndpointIDFn())
+	req, err := http.NewRequest(http.MethodPut, requestURL, bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set(agent.HTTPEdgeIdentifierHeaderName, client.edgeID)
+
+	resp, err := client.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		log.Error().Int("response_code", resp.StatusCode).Msg("UpdatePolicyChartStatuses operation failed")
+
+		return errors.New("UpdatePolicyChartStatuses operation failed")
+	}
+
+	return nil
+}
+
 // SetEdgeJobStatus sends the jobID log to the Portainer server
 func (client *PortainerEdgeClient) SetEdgeJobStatus(edgeJobStatus agent.EdgeJobStatus) error {
 	payload := logFilePayload{
@@ -437,6 +475,50 @@ func (client *PortainerEdgeClient) cacheHeaders() string {
 	}
 
 	return strings.Join(strKs, ",")
+}
+
+// GetCharts retrieves the chart contents for the specified charts from the Portainer server
+func (client *PortainerEdgeClient) GetCharts(chartNames []string) ([]portainer.PolicyChartBundle, portainer.RestoreSettingsBundle, error) {
+	requestURL := fmt.Sprintf("%s/api/endpoints/%d/edge/charts", client.serverAddress, client.getEndpointIDFn())
+
+	// Prepare the charts to install data
+	chartsData, err := json.Marshal(chartNames)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to marshal charts data: %w", err)
+	}
+
+	// Create URL with chartNames query parameter
+	queryParams := url.Values{}
+	queryParams.Set("chartNames", string(chartsData)) // With only a few chart types, hitting the max URL length is unlikely
+	requestURL += "?" + queryParams.Encode()
+
+	req, err := http.NewRequest(http.MethodGet, requestURL, nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set(agent.HTTPEdgeIdentifierHeaderName, client.edgeID)
+
+	resp, err := client.httpClient.Do(req)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to execute request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Error().Int("response_code", resp.StatusCode).Msg("GetCharts operation failed")
+		return nil, nil, fmt.Errorf("GetCharts operation failed with status code %d", resp.StatusCode)
+	}
+
+	var res struct {
+		PolicyChartBundles    []portainer.PolicyChartBundle   `json:"policyChartBundles"`
+		RestoreSettingsBundle portainer.RestoreSettingsBundle `json:"restoreSettingsBundle"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return nil, nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return res.PolicyChartBundles, res.RestoreSettingsBundle, nil
 }
 
 func (client *PortainerEdgeClient) cachedResponse(r *http.Response) (*PollStatusResponse, bool) {

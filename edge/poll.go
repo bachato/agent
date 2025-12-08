@@ -11,6 +11,7 @@ import (
 	"github.com/portainer/agent"
 	"github.com/portainer/agent/chisel"
 	"github.com/portainer/agent/edge/client"
+	"github.com/portainer/agent/edge/policies"
 	"github.com/portainer/agent/edge/scheduler"
 	"github.com/portainer/agent/edge/stack"
 	"github.com/portainer/portainer/pkg/libcrypto"
@@ -36,6 +37,7 @@ type PollService struct {
 	portainerClient          client.PortainerClient
 	tunnelClient             agent.ReverseTunnelClient
 	scheduleManager          agent.Scheduler
+	policyManager            *policies.PolicyManager
 	lastActivity             time.Time
 	updateLastActivitySignal chan struct{}
 	startSignal              chan struct{}
@@ -47,7 +49,6 @@ type PollService struct {
 	tunnelServerFingerprint  string
 	tunnelProxy              string
 	firstPoll                bool
-
 	// Async mode only
 	pingInterval     time.Duration
 	snapshotInterval time.Duration
@@ -76,7 +77,7 @@ type pollServiceConfig struct {
 // The second loop will check for the last activity of the reverse tunnel and close the tunnel if it exceeds the tunnel
 // inactivity duration.
 // If TunnelCapability is disabled, it will only poll for Edge stacks and schedule without managing reverse tunnels.
-func newPollService(edgeManager *Manager, edgeStackManager *stack.StackManager, logsManager *scheduler.LogsManager, config *pollServiceConfig, portainerClient client.PortainerClient, edgeAsyncMode bool) (*PollService, error) {
+func newPollService(edgeManager *Manager, edgeStackManager *stack.StackManager, logsManager *scheduler.LogsManager, config *pollServiceConfig, portainerClient client.PortainerClient, policyManager *policies.PolicyManager, edgeAsyncMode bool) (*PollService, error) {
 	pollFrequency, err := time.ParseDuration(config.PollFrequency)
 	if err != nil {
 		return nil, err
@@ -97,6 +98,7 @@ func newPollService(edgeManager *Manager, edgeStackManager *stack.StackManager, 
 		startSignal:              make(chan struct{}),
 		stopSignal:               make(chan struct{}),
 		edgeManager:              edgeManager,
+		policyManager:            policyManager,
 		edgeStackManager:         edgeStackManager,
 		portainerURL:             config.PortainerURL,
 		tunnelServerAddr:         config.TunnelServerAddr,
@@ -272,6 +274,11 @@ func (service *PollService) poll() error {
 	}
 
 	service.processEdgeConfigs(environmentStatus.EdgeConfigurations)
+
+	if service.edgeManager.kubeClient != nil {
+		// Process helm charts in background to avoid blocking the poll loop
+		go service.policyManager.ProcessPolicyHelmCharts(environmentStatus.PolicyChartSummaries)
+	}
 
 	return service.processStacks(environmentStatus.Stacks)
 }

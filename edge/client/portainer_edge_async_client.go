@@ -291,7 +291,6 @@ func (client *PortainerAsyncClient) GetEnvironmentStatus(flags ...string) (*Poll
 		return !e.Timestamp.After(client.commandTimestamp)
 	})
 
-
 	response := &PollStatusResponse{
 		AsyncCommands:    asyncResponse.Commands,
 		PingInterval:     asyncResponse.PingInterval,
@@ -481,6 +480,16 @@ func (client *PortainerAsyncClient) EnqueueLogCollectionForStack(logCmd LogComma
 	defer client.nextSnapshotMutex.Unlock()
 
 	client.stackLogCollectionQueue = append(client.stackLogCollectionQueue, logCmd)
+}
+
+// GetCharts retrieves the chart contents for the specified charts from the Portainer server
+func (client *PortainerAsyncClient) GetCharts(chartNames []string) ([]portainer.PolicyChartBundle, portainer.RestoreSettingsBundle, error) {
+	// TODO: Implement async client support for GetCharts
+	return []portainer.PolicyChartBundle{}, portainer.RestoreSettingsBundle{}, nil
+}
+func (client *PortainerAsyncClient) UpdatePolicyChartStatuses(statuses []portainer.PolicyChartStatus) error {
+	// TODO: Implement async client support for UpdatePolicyChartStatuses
+	return nil
 }
 
 // SetPendingCommand stores the latest command timestamp for a given stack ID

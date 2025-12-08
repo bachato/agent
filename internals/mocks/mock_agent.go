@@ -375,6 +375,20 @@ func (m *MockReverseTunnelClient) EXPECT() *MockReverseTunnelClientMockRecorder 
 	return m.recorder
 }
 
+// CertsNeedRotation mocks base method.
+func (m *MockReverseTunnelClient) CertsNeedRotation() bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CertsNeedRotation")
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// CertsNeedRotation indicates an expected call of CertsNeedRotation.
+func (mr *MockReverseTunnelClientMockRecorder) CertsNeedRotation() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CertsNeedRotation", reflect.TypeOf((*MockReverseTunnelClient)(nil).CertsNeedRotation))
+}
+
 // CloseTunnel mocks base method.
 func (m *MockReverseTunnelClient) CloseTunnel() error {
 	m.ctrl.T.Helper()

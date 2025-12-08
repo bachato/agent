@@ -29,6 +29,8 @@ type PortainerClient interface {
 	SetTimeout(t time.Duration)
 	SetLastCommandTimestamp(timestamp time.Time)
 	EnqueueLogCollectionForStack(logCmd LogCommandData)
+	GetCharts(chartNames []string) ([]portainer.PolicyChartBundle, portainer.RestoreSettingsBundle, error)
+	UpdatePolicyChartStatuses(statuses []portainer.PolicyChartStatus) error
 }
 
 type EdgeConfigID int
@@ -61,13 +63,14 @@ type EdgeConfig struct {
 }
 
 type PollStatusResponse struct {
-	Status             string                               `json:"status"`
-	Port               int                                  `json:"port"`
-	Schedules          []agent.Schedule                     `json:"schedules"`
-	CheckinInterval    float64                              `json:"checkin"`
-	Credentials        string                               `json:"credentials"`
-	Stacks             []StackStatus                        `json:"stacks"`
-	EdgeConfigurations map[EdgeConfigID]EdgeConfigStateType `json:"edge_configurations"`
+	Status               string                               `json:"status"`
+	Port                 int                                  `json:"port"`
+	Schedules            []agent.Schedule                     `json:"schedules"`
+	CheckinInterval      float64                              `json:"checkin"`
+	Credentials          string                               `json:"credentials"`
+	Stacks               []StackStatus                        `json:"stacks"`
+	EdgeConfigurations   map[EdgeConfigID]EdgeConfigStateType `json:"edge_configurations"`
+	PolicyChartSummaries []portainer.PolicyChartSummary       `json:"policy_chart_summaries"`
 
 	// Async mode only
 	EndpointID       int            `json:"endpointID"`

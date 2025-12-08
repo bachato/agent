@@ -35,18 +35,30 @@ func (deployer *KubernetesDeployer) operation(_ context.Context, _ string, manif
 		return errors.New("missing manifests")
 	}
 
-	token, err := os.ReadFile(defaultServiceAccountTokenFile)
-	if err != nil {
-		return errors.Wrap(err, "failed to read service account token")
-	}
+	var client *libkubectl.Client
+	var err error
 
-	// insecure is true because we are using the in-cluster config
-	client, err := libkubectl.NewClient(&libkubectl.ClientAccess{
-		ServerUrl: "https://kubernetes.default.svc",
-		Token:     string(token),
-	}, namespace, "", true)
-	if err != nil {
-		return errors.Wrap(err, "failed to create kubectl client")
+	// Developers can set the DEV_KUBECONFIG_PATH to run agent locally
+	devKubeConfigPath := os.Getenv("DEV_KUBECONFIG_PATH")
+	if devKubeConfigPath != "" {
+		client, err = libkubectl.NewClient(&libkubectl.ClientAccess{}, namespace, devKubeConfigPath, false)
+		if err != nil {
+			return errors.Wrap(err, "failed to create kubectl client with kubeconfig")
+		}
+	} else {
+		token, err := os.ReadFile(defaultServiceAccountTokenFile)
+		if err != nil {
+			return errors.Wrap(err, "failed to read service account token")
+		}
+
+		// insecure is true because we are using the in-cluster config
+		client, err = libkubectl.NewClient(&libkubectl.ClientAccess{
+			ServerUrl: "https://kubernetes.default.svc",
+			Token:     string(token),
+		}, namespace, "", true)
+		if err != nil {
+			return errors.Wrap(err, "failed to create kubectl client")
+		}
 	}
 
 	operations := map[string]func(context.Context, []string) (string, error){

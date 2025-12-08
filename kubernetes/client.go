@@ -5,13 +5,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"strings"
 
 	"github.com/portainer/portainer/pkg/libstack"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/remotecommand"
 	utilexec "k8s.io/client-go/util/exec"
 )
@@ -19,6 +25,8 @@ import (
 // KubeClient can be used to query the Kubernetes API
 type KubeClient struct {
 	cli *kubernetes.Clientset
+	// dynamicCli enables access to arbitrary resources (including CRDs)
+	dynamicCli dynamic.Interface
 }
 
 // NewKubeClient returns a pointer to a new KubeClient instance
@@ -30,14 +38,48 @@ func NewKubeClient() (*KubeClient, error) {
 		return nil, err
 	}
 
+	config, err := buildKubeConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	// dynamic client needed for GetResource/PatchResource to work with any K8s resource type
+	dynamicCli, err := dynamic.NewForConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create dynamic client: %w", err)
+	}
+
 	kubeCli.cli = cli
+	kubeCli.dynamicCli = dynamicCli
 	return kubeCli, nil
 }
 
+// buildKubeConfig builds the Kubernetes configuration for the client
+func buildKubeConfig() (*rest.Config, error) {
+	// Developers can set the DEV_KUBECONFIG_PATH to run agent locally
+	devKubeConfigPath := os.Getenv("DEV_KUBECONFIG_PATH")
+	if devKubeConfigPath != "" {
+		return clientcmd.BuildConfigFromFlags("", devKubeConfigPath)
+	}
+	return rest.InClusterConfig()
+}
+
 func BuildLocalClient() (*kubernetes.Clientset, error) {
-	config, err := rest.InClusterConfig()
-	if err != nil {
-		return nil, err
+	var config *rest.Config
+	var err error
+
+	// Developers can set the DEV_KUBECONFIG_PATH to run agent locally
+	devKubeConfigPath := os.Getenv("DEV_KUBECONFIG_PATH")
+	if devKubeConfigPath != "" {
+		config, err = clientcmd.BuildConfigFromFlags("", devKubeConfigPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to build config from kubeconfig file %s: %w", devKubeConfigPath, err)
+		}
+	} else {
+		config, err = rest.InClusterConfig()
+		if err != nil {
+			return nil, fmt.Errorf("failed to build in-cluster config: %w", err)
+		}
 	}
 
 	return kubernetes.NewForConfig(config)
@@ -316,4 +358,105 @@ func podMessageFromContainerState(status libstack.Status, state corev1.Container
 	}
 
 	return ""
+}
+
+// GetResource retrieves a Kubernetes resource by group/version/resource and name/namespace
+func (kcl *KubeClient) GetResource(ctx context.Context, apiVersion, kind, name, namespace string) (interface{}, error) {
+	gvr, err := parseGroupVersionResource(apiVersion, kind)
+	if err != nil {
+		return nil, err
+	}
+
+	var resource any
+	if namespace == "" {
+		// Cluster-scoped resource
+		resource, err = kcl.dynamicCli.Resource(*gvr).Get(ctx, name, metav1.GetOptions{})
+	} else {
+		// Namespace-scoped resource
+		resource, err = kcl.dynamicCli.Resource(*gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return resource, nil
+}
+
+// PatchResource applies a JSON merge patch to a Kubernetes resource
+func (kcl *KubeClient) PatchResource(ctx context.Context, apiVersion, kind, name, namespace, patch string) error {
+	gvr, err := parseGroupVersionResource(apiVersion, kind)
+	if err != nil {
+		return err
+	}
+
+	patchBytes := []byte(patch)
+
+	if namespace == "" {
+		// Cluster-scoped resource
+		_, err = kcl.dynamicCli.Resource(*gvr).Patch(ctx, name, types.MergePatchType, patchBytes, metav1.PatchOptions{})
+	} else {
+		// Namespace-scoped resource
+		_, err = kcl.dynamicCli.Resource(*gvr).Namespace(namespace).Patch(ctx, name, types.MergePatchType, patchBytes, metav1.PatchOptions{})
+	}
+
+	return err
+}
+
+// DeleteResource deletes a Kubernetes resource group/version/resource and name/namespace
+func (kcl *KubeClient) DeleteResource(ctx context.Context, apiVersion, kind, name, namespace string) error {
+	gvr, err := parseGroupVersionResource(apiVersion, kind)
+	if err != nil {
+		return err
+	}
+
+	if namespace == "" {
+		// Cluster-scoped resource
+		err = kcl.dynamicCli.Resource(*gvr).Delete(ctx, name, metav1.DeleteOptions{})
+	} else {
+		// Namespace-scoped resource
+		err = kcl.dynamicCli.Resource(*gvr).Namespace(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+	}
+
+	return err
+}
+
+// parseGroupVersionResource converts API version and kind to a GroupVersionResource
+// apiVersion can be "v1" (core API) or "group/version" format
+func parseGroupVersionResource(apiVersion, kind string) (*schema.GroupVersionResource, error) {
+	// This is a simplified implementation. For a more complete one, we'd need to
+	// dynamically discover resources from the API server. For now, we support common cases.
+	var gvr schema.GroupVersionResource
+
+	if apiVersion == "v1" {
+		// Core API group
+		gvr = schema.GroupVersionResource{
+			Version:  "v1",
+			Resource: kindToResource(kind),
+		}
+	} else {
+		// Format: group/version
+		parts := strings.Split(apiVersion, "/")
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid apiVersion format: %s", apiVersion)
+		}
+		gvr = schema.GroupVersionResource{
+			Group:    parts[0],
+			Version:  parts[1],
+			Resource: kindToResource(kind),
+		}
+	}
+
+	return &gvr, nil
+}
+
+// kindToResource converts a Kind to its plural resource name
+func kindToResource(kind string) string {
+	// Simple conversion: lowercase and add 's' for most cases
+	// For more complex cases (e.g., "Policy" -> "policies"), this would need a lookup table
+	lower := strings.ToLower(kind)
+	if strings.HasSuffix(lower, "y") {
+		return lower[:len(lower)-1] + "ies"
+	}
+	return lower + "s"
 }
