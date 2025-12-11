@@ -561,12 +561,12 @@ outerLoop:
 	for _, op := range dockerPatch {
 		// Skip noisy field regexps
 		for _, noisyRegexp := range noisyFieldRegexps {
-			if noisyRegexp.MatchString(op.Path.String()) {
+			if noisyRegexp.MatchString(op.Path) {
 				continue outerLoop
 			}
 		}
 
-		if op.Type != "replace" || !slices.Contains(noisyFields, op.Path.String()) {
+		if op.Type != "replace" || !slices.Contains(noisyFields, op.Path) {
 			return false
 		}
 	}
