@@ -160,3 +160,45 @@ func TestCommandPollingResiliency(t *testing.T) {
 	require.Len(t, resp.AsyncCommands, 1)
 	require.True(t, lastSentCommandTimestamp.Equal(cli.commandTimestamp))
 }
+
+func TestIsDockerSnapshotDiffEmpty(t *testing.T) {
+	// Empty cases
+
+	emptyPatches := [][]jsondiff.Operation{
+		// Noisy field regexps
+		{
+			{
+				Path: "/DockerSnapshotRaw/Containers/1/Status",
+				Type: "add",
+			},
+		},
+
+		// Noisy fields
+		{
+			{
+				Path: "/Time",
+				Type: "replace",
+			},
+		},
+	}
+
+	for _, patch := range emptyPatches {
+		require.True(t, isDockerSnapshotDiffEmpty(patch))
+	}
+
+	// Non-empty cases
+
+	nonEmptyPatches := [][]jsondiff.Operation{
+		// Non-noisy field
+		{
+			{
+				Path: "/DockerSnapshotRaw/Containers/1/Image",
+				Type: "add",
+			},
+		},
+	}
+
+	for _, patch := range nonEmptyPatches {
+		require.False(t, isDockerSnapshotDiffEmpty(patch))
+	}
+}
