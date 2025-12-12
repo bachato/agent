@@ -516,11 +516,6 @@ func (client *PortainerAsyncClient) createDockerSnapshot(payload *AsyncRequest, 
 		return
 	}
 
-	h, ok := snapshotHash(client.lastSnapshot.Docker)
-	if !ok {
-		return
-	}
-
 	dockerPatch, err := jsondiff.Compare(client.lastSnapshot.Docker, dockerSnapshot)
 	if err != nil {
 		log.Warn().Err(err).Msg("could not generate the Docker snapshot patch")
@@ -528,13 +523,21 @@ func (client *PortainerAsyncClient) createDockerSnapshot(payload *AsyncRequest, 
 		return
 	}
 
-	if !isDockerSnapshotDiffEmpty(dockerPatch) {
-		currentSnapshot.Docker = nil
+	if isDockerSnapshotDiffEmpty(dockerPatch) {
+		payload.Snapshot.Docker = nil
 
-		payload.Snapshot.DockerPatch = dockerPatch
-		payload.Snapshot.DockerHash = &h
+		return
 	}
 
+	h, ok := snapshotHash(client.lastSnapshot.Docker)
+	if !ok {
+		return
+	}
+
+	currentSnapshot.Docker = nil
+
+	payload.Snapshot.DockerPatch = dockerPatch
+	payload.Snapshot.DockerHash = &h
 	payload.Snapshot.Docker = nil
 }
 
