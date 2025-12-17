@@ -60,7 +60,7 @@ type PortainerAsyncClient struct {
 	stackLogCollectionQueue []LogCommandData
 	liveLogCollectors       map[string]*LiveLogCollector
 
-	dockerSnapshotter DockerSnapshotter
+	createSnapshotFn DockerSnapshotter
 }
 
 // NewPortainerAsyncClient returns a pointer to a new PortainerAsyncClient instance
@@ -92,7 +92,7 @@ func NewPortainerAsyncClient(
 		commandTimestamp:        time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC),
 		pendingESCommandsTS:     make(map[portainer.EdgeStackID]versionAndTS),
 		metaFields:              metaFields,
-		dockerSnapshotter:       clientOpts.dockerSnapshotter,
+		createSnapshotFn:        clientOpts.dockerSnapshotter,
 		liveLogCollectors:       make(map[string]*LiveLogCollector),
 	}
 }
@@ -205,9 +205,7 @@ type NormalStackCommandData struct {
 	RemoveVolumes    bool
 }
 
-type DockerSnapshotter interface {
-	CreateSnapshot(edgeKey string) (*portainer.DockerSnapshot, error)
-}
+type DockerSnapshotter func(edgeKey string) (*portainer.DockerSnapshot, error)
 
 func (client *PortainerAsyncClient) GetEnvironmentID() (portainer.EndpointID, error) {
 	return 0, errors.New("GetEnvironmentID is not available in async mode")
@@ -500,7 +498,7 @@ func (client *PortainerAsyncClient) SetPendingCommand(id portainer.EdgeStackID, 
 }
 
 func (client *PortainerAsyncClient) createDockerSnapshot(payload *AsyncRequest, currentSnapshot *snapshot) {
-	dockerSnapshot, err := client.dockerSnapshotter.CreateSnapshot(client.edgeKey)
+	dockerSnapshot, err := client.createSnapshotFn(client.edgeKey)
 	if err != nil {
 		log.Warn().Err(err).Msg("could not create the Docker snapshot")
 
