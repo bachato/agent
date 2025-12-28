@@ -9,7 +9,7 @@ COPY dist/docker-credential-portainer /app/
 COPY dist/healthy /app/
 
 COPY static /app/static
-COPY config $HOME/.docker/
+COPY config /root/.docker/
 
 ARG GIT_COMMIT=unspecified
 ARG BUILD_DATE=unspecified
