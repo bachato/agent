@@ -62,7 +62,7 @@ func (deployer *KubernetesDeployer) operation(_ context.Context, _ string, manif
 	}
 
 	operations := map[string]func(context.Context, []string) (string, error){
-		"apply":           client.Apply,
+		"apply":           client.ApplyDynamic,
 		"delete":          client.Delete,
 		"rollout-restart": client.RolloutRestart,
 	}
@@ -127,7 +127,7 @@ func (deployer *KubernetesDeployer) DeployRawConfig(token, config string, namesp
 		return nil, errors.Wrap(err, "failed to create kubectl client")
 	}
 
-	_, err = client.Apply(context.Background(), []string{config})
+	_, err = client.ApplyDynamic(context.Background(), []string{config})
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to execute kubectl apply command")
 	}
