@@ -39,6 +39,7 @@ func (manager *StackManager) UpdateStacksStatus(pollResponseStacks map[int]clien
 
 	for stackID, status := range pollResponseStacks {
 		if err := manager.processStack(stackID, status); err != nil {
+			manager.portainerClient.SetEdgeStackStatus(stackID, status.Version, portainer.EdgeStackStatusError, nil, err.Error())
 			return err
 		}
 	}
