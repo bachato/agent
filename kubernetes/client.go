@@ -303,18 +303,18 @@ func (kcl *KubeClient) inferWorkloadStatusByPods(namespace string, name string, 
 func AggregateStatuses(statuses []ResourceStatus) ResourceStatus {
 	statusCounts := make(map[libstack.Status]int)
 	totalCount := len(statuses)
-	errorMessage := ""
+	var errorMessage strings.Builder
 
 	for _, status := range statuses {
 		statusCounts[status.Status] += 1
 		if status.Status == libstack.StatusError {
-			errorMessage += status.Message + "\n"
+			errorMessage.WriteString(status.Message + "\n")
 		}
 	}
 
 	switch {
 	case statusCounts[libstack.StatusError] > 0:
-		return ResourceStatus{Status: libstack.StatusError, Message: errorMessage}
+		return ResourceStatus{Status: libstack.StatusError, Message: errorMessage.String()}
 	case statusCounts[libstack.StatusStarting] > 0:
 		return ResourceStatus{Status: libstack.StatusStarting}
 	case statusCounts[libstack.StatusRemoving] > 0:
@@ -361,7 +361,7 @@ func podMessageFromContainerState(status libstack.Status, state corev1.Container
 }
 
 // GetResource retrieves a Kubernetes resource by group/version/resource and name/namespace
-func (kcl *KubeClient) GetResource(ctx context.Context, apiVersion, kind, name, namespace string) (interface{}, error) {
+func (kcl *KubeClient) GetResource(ctx context.Context, apiVersion, kind, name, namespace string) (any, error) {
 	gvr, err := parseGroupVersionResource(apiVersion, kind)
 	if err != nil {
 		return nil, err

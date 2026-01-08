@@ -3,6 +3,7 @@ package exec
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/docker/docker/api/types"
@@ -99,30 +100,22 @@ func aggregateStatus(statuses []libstack.Status) libstack.Status {
 	}
 
 	// If any service has failed, return "failed"
-	for _, status := range statuses {
-		if status == libstack.StatusError {
-			return libstack.StatusError
-		}
+	if slices.Contains(statuses, libstack.StatusError) {
+		return libstack.StatusError
 	}
 
 	// If any service is removing, return "removing"
-	for _, status := range statuses {
-		if status == libstack.StatusRemoving {
-			return libstack.StatusRemoving
-		}
+	if slices.Contains(statuses, libstack.StatusRemoving) {
+		return libstack.StatusRemoving
 	}
 
 	// If any service is starting, return "starting"
-	for _, status := range statuses {
-		if status == libstack.StatusStarting {
-			return libstack.StatusStarting
-		}
+	if slices.Contains(statuses, libstack.StatusStarting) {
+		return libstack.StatusStarting
 	}
 
-	for _, status := range statuses {
-		if status == libstack.StatusUnknown {
-			return libstack.StatusUnknown
-		}
+	if slices.Contains(statuses, libstack.StatusUnknown) {
+		return libstack.StatusUnknown
 	}
 
 	// If all services are running, return "running"

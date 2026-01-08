@@ -46,7 +46,7 @@ func (y *KubernetesYaml) getRegistryCredentialsByImageURL(imageURL string) []edg
 }
 
 func (y *KubernetesYaml) generateImagePullSecrets(namespace string, secretName string, cred edge.RegistryCredentials) v1Types.Secret {
-	credentials := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", cred.Username, cred.Secret)))
+	credentials := base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "%s:%s", cred.Username, cred.Secret))
 	registryURL := cred.ServerURL
 	if !strings.HasPrefix(cred.ServerURL, "http") {
 		registryURL = "https://" + registryURL
@@ -57,13 +57,13 @@ func (y *KubernetesYaml) generateImagePullSecrets(namespace string, secretName s
 			Namespace: namespace,
 		},
 		Data: map[string][]byte{
-			".dockerconfigjson": []byte(fmt.Sprintf(`{
+			".dockerconfigjson": fmt.Appendf(nil, `{
 				"auths": {
 					"%s": {
 						"auth": "%s"
 					}
 				}
-			}`, registryURL, credentials)),
+			}`, registryURL, credentials),
 		},
 		Type: v1Types.SecretTypeDockerConfigJson,
 	}

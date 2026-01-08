@@ -185,7 +185,7 @@ func parseListValue(flagValue *string) ([]int, error) {
 
 	var arr []int
 
-	for _, strValue := range strings.Split(*flagValue, listSeparator) {
+	for strValue := range strings.SplitSeq(*flagValue, listSeparator) {
 		intValue, err := strconv.Atoi(strValue)
 		if err != nil {
 			return nil, err
