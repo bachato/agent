@@ -21,6 +21,7 @@ linters:
     - zerologlint
     - testifylint
     - modernize
+    - unconvert
   settings:
     staticcheck:
       checks: ["all", "-SA1019", "-ST1003", "-ST1005", "-ST1016", "-QF1002", "-QF1003", "-QF1008"]
