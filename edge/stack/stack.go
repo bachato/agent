@@ -378,6 +378,7 @@ func (manager *StackManager) checkStackStatus(ctx context.Context, stackName str
 		requiredStatus = libstack.StatusCompleted
 	}
 
+	// Wait for the required status until timeout
 	status, statusMessage := manager.waitForStatus(ctx, stackName, requiredStatus, options)
 
 	// if the stack is an edge update, and the status message contains a context deadline exceeded error,
