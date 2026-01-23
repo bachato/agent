@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/portainer/agent/constants"
+	"github.com/portainer/portainer/api/logs"
 )
 
 // FileInfo represents information about a file on the filesystem
@@ -132,7 +133,7 @@ func WriteBigFile(folder, filename string, srcfile multipart.File, mode uint32) 
 	if err != nil {
 		return err
 	}
-	defer dstfile.Close()
+	defer logs.CloseAndLogErr(dstfile)
 
 	const chunkSize int64 = 32 << 20 // 32 MB
 	buf := make([]byte, chunkSize)

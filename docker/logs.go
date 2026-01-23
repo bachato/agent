@@ -10,6 +10,7 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/portainer/portainer/api/logs"
 	"github.com/rs/zerolog/log"
 )
 
@@ -34,7 +35,7 @@ func GetContainerLogs(containerName, tail, since, until string) ([]byte, []byte,
 	if err != nil {
 		return nil, nil, err
 	}
-	defer cli.Close()
+	defer logs.CloseAndLogErr(cli)
 
 	rd, err := cli.ContainerLogs(context.Background(), containerName, container.LogsOptions{
 		ShowStdout: true,
@@ -47,7 +48,7 @@ func GetContainerLogs(containerName, tail, since, until string) ([]byte, []byte,
 	if err != nil {
 		return nil, nil, err
 	}
-	defer rd.Close()
+	defer logs.CloseAndLogErr(rd)
 
 	var stdOut, stdErr bytes.Buffer
 	_, err = stdcopy.StdCopy(&stdOut, &stdErr, rd)

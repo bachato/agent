@@ -16,7 +16,7 @@ func TestGetEdgeConfig(t *testing.T) {
 	fips.InitFIPS(false)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"Id": 1, "Name": "test"}`))
+		_, _ = w.Write([]byte(`{"Id": 1, "Name": "test"}`))
 	}))
 	defer srv.Close()
 

@@ -6,7 +6,7 @@ import (
 
 	"github.com/portainer/agent"
 	"github.com/portainer/portainer/api/edge"
-	
+
 	"github.com/stretchr/testify/assert"
 )
 

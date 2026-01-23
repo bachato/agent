@@ -162,7 +162,11 @@ func (service *Service) fetchCRL(url string) (*x509.RevocationList, error) {
 		return nil, err
 	}
 
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Warn().Err(err).Msg("failed to close response body")
+		}
+	}()
 
 	if resp.StatusCode >= 300 {
 		return nil, errors.New("failed to retrieve CRL")
@@ -195,7 +199,11 @@ func (service *Service) fetchRemote(url string) (*x509.Certificate, error) {
 		return nil, err
 	}
 
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Warn().Err(err).Msg("failed to close response body")
+		}
+	}()
 
 	in, err := io.ReadAll(resp.Body)
 	if err != nil {

@@ -32,7 +32,7 @@ func Test_executeAsyncRequestCompression(t *testing.T) {
 			return
 		}
 
-		w.Write([]byte("{}"))
+		_, _ = w.Write([]byte("{}"))
 	}))
 	defer srv.Close()
 
@@ -55,7 +55,7 @@ func Test_executeAsyncRequestCompression(t *testing.T) {
 			return
 		}
 
-		w.Write([]byte("{}"))
+		_, _ = w.Write([]byte("{}"))
 	}))
 	defer srv.Close()
 

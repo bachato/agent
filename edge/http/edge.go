@@ -19,9 +19,7 @@ type EdgeServer struct {
 
 // NewEdgeServer returns a pointer to a new instance of EdgeServer.
 func NewEdgeServer(edgeManager *edge.Manager) *EdgeServer {
-	return &EdgeServer{
-		edgeManager: edgeManager,
-	}
+	return &EdgeServer{edgeManager: edgeManager}
 }
 
 // Start starts a new web server by listening on the specified addr and port.
@@ -33,8 +31,7 @@ func (server *EdgeServer) Start(addr, port string) error {
 	listenAddr := addr + ":" + port
 	server.httpServer = &http.Server{Addr: listenAddr, Handler: router}
 
-	err := server.httpServer.ListenAndServe()
-	if err != http.ErrServerClosed {
+	if err := server.httpServer.ListenAndServe(); err != http.ErrServerClosed {
 		return err
 	}
 
@@ -43,8 +40,7 @@ func (server *EdgeServer) Start(addr, port string) error {
 
 func (server *EdgeServer) handleKeySetup() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		err := r.ParseForm()
-		if err != nil {
+		if err := r.ParseForm(); err != nil {
 			http.Error(w, "Unable to parse form", http.StatusInternalServerError)
 			return
 		}
@@ -55,27 +51,30 @@ func (server *EdgeServer) handleKeySetup() http.HandlerFunc {
 			return
 		}
 
-		err = server.edgeManager.SetKey(key)
-		if err != nil {
+		if err := server.edgeManager.SetKey(key); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+
 			return
 		}
 
-		err = server.edgeManager.Start()
-		if err != nil {
+		if err := server.edgeManager.Start(); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 
 		go server.propagateKeyInCluster()
 
-		w.Write([]byte("Agent setup OK. You can close this page."))
-		server.Shutdown()
+		if _, err := w.Write([]byte("Agent setup OK. You can close this page.")); err != nil {
+			log.Warn().Err(err).Msg("failed to write response")
+		}
+
+		if err := server.Shutdown(); err != nil {
+			log.Warn().Err(err).Msg("failed to shutdown server")
+		}
 	}
 }
 
 func (server *EdgeServer) propagateKeyInCluster() {
-	err := server.edgeManager.PropagateKeyInCluster()
-	if err != nil {
+	if err := server.edgeManager.PropagateKeyInCluster(); err != nil {
 		log.Error().Err(err).Msg("unable to propagate key to cluster")
 	}
 }
@@ -86,5 +85,6 @@ func (server *EdgeServer) Shutdown() error {
 	defer cancel()
 
 	server.httpServer.SetKeepAlivesEnabled(false)
+
 	return server.httpServer.Shutdown(ctx)
 }

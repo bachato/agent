@@ -421,7 +421,10 @@ func (service *PollService) processEdgeConfigCommand(cmd client.AsyncCommand) er
 	}
 
 	if configData.Invalid {
-		service.portainerClient.SetEdgeConfigState(configData.ID, client.EdgeConfigFailureState)
+		if err := service.portainerClient.SetEdgeConfigState(configData.ID, client.EdgeConfigFailureState); err != nil {
+			log.Error().Err(err).Msg("failed to set edge config state")
+		}
+
 		err = errors.New("edge secret is not allowed to transmit over HTTP")
 		return newOperationError("edgeConfig", cmd.Operation, err)
 	}
@@ -436,9 +439,11 @@ func (service *PollService) processEdgeConfigCommand(cmd client.AsyncCommand) er
 	}
 
 	if err == nil {
-		service.portainerClient.SetEdgeConfigState(configData.ID, client.EdgeConfigIdleState)
-	} else {
-		service.portainerClient.SetEdgeConfigState(configData.ID, client.EdgeConfigFailureState)
+		if err := service.portainerClient.SetEdgeConfigState(configData.ID, client.EdgeConfigIdleState); err != nil {
+			log.Error().Err(err).Msg("failed to set edge config state")
+		}
+	} else if err := service.portainerClient.SetEdgeConfigState(configData.ID, client.EdgeConfigFailureState); err != nil {
+		log.Error().Err(err).Msg("failed to set edge config state")
 	}
 
 	return newOperationError("edgeConfig", cmd.Operation, err)

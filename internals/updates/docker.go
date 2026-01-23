@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 
 	"github.com/portainer/agent/docker"
+	"github.com/portainer/portainer/api/logs"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -36,7 +37,7 @@ func (du *DockerUpdaterCleaner) Clean(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer cli.Close()
+	defer logs.CloseAndLogErr(cli)
 
 	foundRunningContainer := false
 
@@ -119,7 +120,7 @@ func AgentUpdateCleanup(ctx context.Context, updateID int) error {
 	if err != nil {
 		return err
 	}
-	defer cli.Close()
+	defer logs.CloseAndLogErr(cli)
 
 	containers, err := getAgentContainerCandidates(ctx, cli)
 	if err != nil {

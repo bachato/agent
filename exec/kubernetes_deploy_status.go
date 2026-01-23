@@ -15,6 +15,7 @@ import (
 
 	"github.com/portainer/agent/deployer"
 	"github.com/portainer/agent/kubernetes"
+	"github.com/portainer/portainer/api/logs"
 	libstack "github.com/portainer/portainer/pkg/libstack"
 	"github.com/rs/zerolog/log"
 )
@@ -63,7 +64,7 @@ func (service *KubernetesDeployer) getStatusForYAML(requiredStatus libstack.Stat
 	if err != nil {
 		return libstack.StatusError, "", err
 	}
-	defer file.Close()
+	defer logs.CloseAndLogErr(file)
 
 	defaultNamespace := options.Namespace
 

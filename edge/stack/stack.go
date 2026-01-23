@@ -39,7 +39,10 @@ func (manager *StackManager) UpdateStacksStatus(pollResponseStacks map[int]clien
 
 	for stackID, status := range pollResponseStacks {
 		if err := manager.processStack(stackID, status); err != nil {
-			manager.portainerClient.SetEdgeStackStatus(stackID, status.Version, portainer.EdgeStackStatusError, nil, err.Error())
+			if err := manager.portainerClient.SetEdgeStackStatus(stackID, status.Version, portainer.EdgeStackStatusError, nil, err.Error()); err != nil {
+				log.Error().Err(err).Int("stack_identifier", stackID).Msg("unable to update Edge stack status")
+			}
+
 			return err
 		}
 	}
@@ -61,7 +64,7 @@ func (manager *StackManager) addRegistryToEntryFile(stackPayload *edge.StackPayl
 	}
 
 	if fileContent == nil {
-		return fmt.Errorf("EntryFileName not found in DirEntries")
+		return errors.New("EntryFileName not found in DirEntries")
 	}
 
 	switch manager.engineType {
@@ -219,7 +222,7 @@ func (manager *StackManager) performActionOnStack() {
 		stack.FirstAction = stack.LastAction
 	}
 
-	stackName := fmt.Sprintf("edge_%s", stack.Name)
+	stackName := "edge_" + stack.Name
 	stackFileLocation := fmt.Sprintf("%s/%s", stack.FileFolder, stack.FileName)
 
 	// When the edge update fails after the old agent container was stopped, and portainer-updater compensates by restarting the old agent container.
@@ -487,7 +490,7 @@ func (manager *StackManager) pullImages(ctx context.Context, stack *edgeStack, s
 
 	stack.PullCount++
 	if stack.PullCount > perHourRetries && stack.PullCount%perHourRetries != 0 {
-		return fmt.Errorf("skip pulling")
+		return errors.New("skip pulling")
 	}
 
 	stack.Status = StatusDeploying

@@ -6,6 +6,7 @@ import (
 
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
+	"github.com/portainer/portainer/api/logs"
 )
 
 func ImageDelete(name string, opts image.RemoveOptions) (r []image.DeleteResponse, err error) {
@@ -24,7 +25,7 @@ func ImageLoad(imagePath string) error {
 		if err != nil {
 			return err
 		}
-		defer file.Close()
+		defer logs.CloseAndLogErr(file)
 
 		_, err = cli.ImageLoad(context.Background(), file)
 		return err

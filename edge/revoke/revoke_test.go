@@ -2,6 +2,8 @@ package revoke
 
 import (
 	"crypto/x509"
+	"net/http"
+	"net/http/httptest"
 
 	//"crypto/x509/pkix"
 	"encoding/pem"
@@ -9,6 +11,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 // The first three test cases represent known revoked, expired, and good
@@ -210,17 +214,27 @@ func TestBadCRLSet(t *testing.T) {
 	ldapCert := mustParse(goodComodoCA)
 	ldapCert.CRLDistributionPoints[0] = ""
 
-	service.crlSet[""] = nil
-	service.certIsRevokedCRL(ldapCert, "")
-	if _, ok := service.crlSet[""]; ok {
-		t.Fatalf("key emptystring should be deleted from CRLSet")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("not a valid CRL"))
+	}))
+	defer srv.Close()
+
+	service.crlSet[srv.URL] = nil
+
+	revoked, err := service.certIsRevokedCRL(ldapCert, srv.URL)
+	require.False(t, revoked)
+	require.Error(t, err)
+
+	if _, ok := service.crlSet[srv.URL]; ok {
+		t.Fatalf("key should be deleted from CRLSet")
 	}
-	delete(service.crlSet, "")
+	delete(service.crlSet, srv.URL)
 }
 
 func TestCachedCRLSet(t *testing.T) {
 	service := setup()
-	service.VerifyCertificate(goodCert)
+	_, _ = service.VerifyCertificate(goodCert)
 	if revoked, err := service.VerifyCertificate(goodCert); err != nil || revoked {
 		t.Fatalf("Previously fetched CRL's should be read smoothly and unrevoked")
 	}

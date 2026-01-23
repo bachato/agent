@@ -120,8 +120,10 @@ func (clusterProxy *ClusterProxy) pingAgent(request *http.Request, member *agent
 		return err
 	}
 
-	io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	if err := resp.Body.Close(); err != nil {
+		log.Error().Err(err).Msg("failed to close ping response body")
+	}
 
 	if resp.StatusCode != http.StatusNoContent {
 		return errors.New("agent ping request failed")
@@ -150,11 +152,16 @@ func (clusterProxy *ClusterProxy) copyAndExecuteRequest(request *http.Request, m
 		ch <- agentRequestResult{err: err, nodeName: member.NodeName}
 		return
 	}
-	defer response.Body.Close()
+	defer func() {
+		if err := response.Body.Close(); err != nil {
+			log.Error().Err(err).Msg("failed to close response body")
+		}
+	}()
 
 	data, err := responseToJSONArray(response, request.URL.Path)
 	if err != nil {
 		ch <- agentRequestResult{err: err, nodeName: member.NodeName}
+
 		return
 	}
 
@@ -182,6 +189,7 @@ func copyRequest(request *http.Request, member *agent.ClusterMember, useTLS bool
 
 	requestCopy.Header = cloneHeader(request.Header)
 	requestCopy.Header.Set(agent.HTTPTargetHeaderName, member.NodeName)
+
 	return requestCopy, nil
 }
 

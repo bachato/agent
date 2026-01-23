@@ -8,6 +8,7 @@ import (
 
 	"github.com/portainer/agent"
 	"github.com/portainer/agent/http/proxy"
+	"github.com/portainer/portainer/api/logs"
 	"github.com/portainer/portainer/api/ws"
 	httperror "github.com/portainer/portainer/pkg/libhttp/error"
 	"github.com/portainer/portainer/pkg/libhttp/request"
@@ -60,7 +61,7 @@ func (handler *Handler) handleAttachRequest(w http.ResponseWriter, r *http.Reque
 		return httperror.InternalServerError("An error occurred during websocket attach operation: unable to upgrade connection", err)
 
 	}
-	defer websocketConn.Close()
+	defer logs.CloseAndLogErr(websocketConn)
 
 	if err := hijackAttachStartOperation(websocketConn, attachID); err != nil {
 		return httperror.InternalServerError("An error occurred during websocket attach operation", err)
@@ -85,8 +86,13 @@ func hijackStartOperation(
 	// state. Setting TCP KeepAlive on the socket connection will prohibit
 	// ECONNTIMEOUT unless the socket connection truly is broken
 	if tcpConn, ok := dial.(*net.TCPConn); ok {
-		tcpConn.SetKeepAlive(true)
-		tcpConn.SetKeepAlivePeriod(30 * time.Second)
+		if err := tcpConn.SetKeepAlive(true); err != nil {
+			return err
+		}
+
+		if err := tcpConn.SetKeepAlivePeriod(30 * time.Second); err != nil {
+			return err
+		}
 	}
 
 	startRequest, err := operation(opID)

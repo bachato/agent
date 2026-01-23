@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/portainer/agent/filesystem"
+	"github.com/portainer/portainer/api/logs"
 	httperror "github.com/portainer/portainer/pkg/libhttp/error"
 	"github.com/portainer/portainer/pkg/libhttp/request"
 	"github.com/portainer/portainer/pkg/libhttp/response"
@@ -44,7 +45,7 @@ func (handler *Handler) browsePut(rw http.ResponseWriter, r *http.Request) *http
 	if err != nil {
 		return httperror.BadRequest("Invalid request payload", err)
 	}
-	defer file.Close()
+	defer logs.CloseAndLogErr(file)
 
 	if vs := r.Form["Path"]; len(vs) > 0 {
 		payload.Path = vs[0]

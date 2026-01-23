@@ -132,7 +132,7 @@ func main() {
 					log.Fatal().Err(err).Msg("unable to retrieve agent service name from Docker")
 				}
 
-				clusterAddr = fmt.Sprintf("tasks.%s", serviceName)
+				clusterAddr = "tasks." + serviceName
 			}
 
 			// TODO: Workaround. looks like the Docker DNS cannot find any info on tasks.<service_name>
@@ -145,8 +145,7 @@ func main() {
 					Msg("unable to retrieve a list of IP associated to the host")
 			}
 
-			err = clusterService.Create(advertiseAddr, joinAddr, options.ClusterProbeTimeout, options.ClusterProbeInterval)
-			if err != nil {
+			if err := clusterService.Create(advertiseAddr, joinAddr, options.ClusterProbeTimeout, options.ClusterProbeInterval); err != nil {
 				log.Fatal().Err(err).Msg("unable to create cluster")
 			}
 
@@ -198,8 +197,7 @@ func main() {
 				Msg("unable to retrieve a list of IP associated to the host")
 		}
 
-		err = clusterService.Create(advertiseAddr, joinAddr, options.ClusterProbeTimeout, options.ClusterProbeInterval)
-		if err != nil {
+		if err := clusterService.Create(advertiseAddr, joinAddr, options.ClusterProbeTimeout, options.ClusterProbeInterval); err != nil {
 			log.Fatal().Err(err).Msg("unable to create cluster")
 		}
 
@@ -217,7 +215,11 @@ func main() {
 
 	// Clean the updater
 	if updaterCleaner != nil {
-		go updates.Remove(ctx, updaterCleaner)
+		go func() {
+			if err := updates.Remove(ctx, updaterCleaner); err != nil {
+				log.Warn().Err(err).Msg("unable to clean the updater")
+			}
+		}()
 	}
 	// !Clean the updater
 
@@ -227,8 +229,7 @@ func main() {
 	if !options.EdgeMode {
 		tlsService := crypto.TLSService{}
 
-		err := tlsService.GenerateCertsForHost(advertiseAddr)
-		if err != nil {
+		if err := tlsService.GenerateCertsForHost(advertiseAddr); err != nil {
 			log.Fatal().Err(err).Msg("unable to generate self-signed certificates")
 		}
 	}
@@ -257,13 +258,11 @@ func main() {
 		if edgeKey != "" {
 			log.Debug().Msg("edge key found in environment. Associating Edge key")
 
-			err := edgeManager.SetKey(edgeKey)
-			if err != nil {
+			if err := edgeManager.SetKey(edgeKey); err != nil {
 				log.Fatal().Err(err).Msg("unable to associate Edge key")
 			}
 
-			err = edgeManager.Start()
-			if err != nil {
+			if err := edgeManager.Start(); err != nil {
 				log.Fatal().Err(err).Msg("Unable to start Edge manager")
 			}
 		} else {
@@ -295,13 +294,11 @@ func main() {
 	}
 
 	awsConfig := aws.ExtractAwsConfig(options)
-	err = registry.StartRegistryServer(edgeManager, awsConfig)
-	if err != nil {
+	if err := registry.StartRegistryServer(edgeManager, awsConfig); err != nil {
 		log.Fatal().Err(err).Msg("unable to start registry server")
 	}
 
-	err = startAPIServer(config, options.EdgeMode)
-	if err != nil && !errors.Is(err, gohttp.ErrServerClosed) {
+	if err := startAPIServer(config, options.EdgeMode); err != nil && !errors.Is(err, gohttp.ErrServerClosed) {
 		log.Fatal().Err(err).Msg("unable to start Agent API server")
 	}
 
@@ -371,8 +368,7 @@ func serveEdgeUI(edgeManager *edge.Manager, serverAddr, serverPort string) {
 	go func() {
 		log.Info().Str("server_address", serverAddr).Str("server_port", serverPort).Msg("Starting Edge UI server")
 
-		err := edgeServer.Start(serverAddr, serverPort)
-		if err != nil {
+		if err := edgeServer.Start(serverAddr, serverPort); err != nil {
 			log.Fatal().Err(err).Msg("Unable to start Edge server")
 		}
 
@@ -382,12 +378,16 @@ func serveEdgeUI(edgeManager *edge.Manager, serverAddr, serverPort string) {
 	go func() {
 		time.Sleep(agent.DefaultEdgeSecurityShutdown * time.Minute)
 
-		if !edgeManager.IsKeySet() {
-			log.Info().
-				Int("shutdown_minutes", agent.DefaultEdgeSecurityShutdown).
-				Msg("Shutting down Edge UI server as no key was specified after shutdown_minutes")
+		if edgeManager.IsKeySet() {
+			return
+		}
 
-			edgeServer.Shutdown()
+		log.Info().
+			Int("shutdown_minutes", agent.DefaultEdgeSecurityShutdown).
+			Msg("Shutting down Edge UI server as no key was specified after shutdown_minutes")
+
+		if err := edgeServer.Shutdown(); err != nil {
+			log.Warn().Err(err).Msg("failed to shutdown Edge UI server")
 		}
 	}()
 }

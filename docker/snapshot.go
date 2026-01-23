@@ -4,6 +4,7 @@ import (
 	"sort"
 
 	portainer "github.com/portainer/portainer/api"
+	"github.com/portainer/portainer/api/logs"
 	"github.com/portainer/portainer/pkg/snapshot"
 )
 
@@ -12,7 +13,7 @@ func CreateSnapshot(edgeKey string) (*portainer.DockerSnapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer cli.Close()
+	defer logs.CloseAndLogErr(cli)
 
 	dockerSnapshot, err := snapshot.CreateDockerSnapshot(cli)
 	if err != nil {

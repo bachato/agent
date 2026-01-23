@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/portainer/agent"
+	"github.com/portainer/portainer/api/logs"
 
 	dockernetwork "github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/system"
@@ -34,7 +35,7 @@ func (service InfoService) GetRuntimeConfigurationFromDockerEngine() (*agent.Run
 	if err != nil {
 		return nil, err
 	}
-	defer cli.Close()
+	defer logs.CloseAndLogErr(cli)
 
 	dockerInfo, err := cli.Info(context.Background())
 	if err != nil {
@@ -48,13 +49,8 @@ func (service InfoService) GetRuntimeConfigurationFromDockerEngine() (*agent.Run
 
 	if dockerInfo.Swarm.NodeID == "" {
 		getStandaloneConfig(runtimeConfig)
-	} else {
-
-		err := getSwarmConfig(runtimeConfig, dockerInfo, cli)
-		if err != nil {
-			return nil, err
-		}
-
+	} else if err := getSwarmConfig(runtimeConfig, dockerInfo, cli); err != nil {
+		return nil, err
 	}
 
 	return runtimeConfig, nil
@@ -69,7 +65,7 @@ func (service InfoService) GetContainerIpFromDockerEngine(containerName string, 
 	if err != nil {
 		return "", err
 	}
-	defer cli.Close()
+	defer logs.CloseAndLogErr(cli)
 
 	containerInspect, err := cli.ContainerInspect(context.Background(), containerName)
 	if err != nil {
@@ -120,7 +116,7 @@ func (service InfoService) GetServiceNameFromDockerEngine(containerName string) 
 	if err != nil {
 		return "", err
 	}
-	defer cli.Close()
+	defer logs.CloseAndLogErr(cli)
 
 	containerInspect, err := cli.ContainerInspect(context.Background(), containerName)
 	if err != nil {
@@ -175,7 +171,7 @@ func withCli(callback func(cli *client.Client) error) error {
 	if err != nil {
 		return err
 	}
-	defer cli.Close()
+	defer logs.CloseAndLogErr(cli)
 
 	return callback(cli)
 }

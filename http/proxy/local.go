@@ -5,6 +5,8 @@ import (
 	"net/http"
 
 	httperror "github.com/portainer/portainer/pkg/libhttp/error"
+
+	"github.com/rs/zerolog/log"
 )
 
 // LocalProxy is a service used to proxy requests to a Unix socket (Linux) or named pipe (Windows).
@@ -23,11 +25,17 @@ func (proxy *LocalProxy) ServeHTTP(rw http.ResponseWriter, request *http.Request
 		if res != nil && res.StatusCode != 0 {
 			code = res.StatusCode
 		}
+
 		httperror.WriteError(rw, code, "Unable to proxy the request via the Docker socket", err)
+
 		return
 	}
 
-	defer res.Body.Close()
+	defer func() {
+		if err := res.Body.Close(); err != nil {
+			log.Warn().Err(err).Msg("Failed closing proxied request body")
+		}
+	}()
 
 	for k, vv := range res.Header {
 		for _, v := range vv {
@@ -39,5 +47,7 @@ func (proxy *LocalProxy) ServeHTTP(rw http.ResponseWriter, request *http.Request
 
 	// TODO: resource duplication error: it seems that the body size is different here
 	// from the size retrieve in cluster.go
-	io.Copy(rw, res.Body)
+	if _, err := io.Copy(rw, res.Body); err != nil {
+		log.Warn().Err(err).Msg("Error copying response body from proxied request")
+	}
 }

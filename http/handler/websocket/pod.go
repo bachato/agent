@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/portainer/agent"
+	"github.com/portainer/portainer/api/logs"
 	"github.com/portainer/portainer/api/ws"
 	httperror "github.com/portainer/portainer/pkg/libhttp/error"
 	"github.com/portainer/portainer/pkg/libhttp/request"
@@ -43,12 +44,12 @@ func (handler *Handler) websocketPodExec(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		return httperror.InternalServerError("Unable to upgrade the connection", err)
 	}
-	defer websocketConn.Close()
+	defer logs.CloseAndLogErr(websocketConn)
 
 	stdinReader, stdinWriter := io.Pipe()
-	defer stdinWriter.Close()
+	defer logs.CloseAndLogErr(stdinWriter)
 	stdoutReader, stdoutWriter := io.Pipe()
-	defer stdoutWriter.Close()
+	defer logs.CloseAndLogErr(stdoutWriter)
 
 	errorChan := make(chan error, 1)
 	go ws.StreamFromWebsocketToWriter(websocketConn, stdinWriter, errorChan)

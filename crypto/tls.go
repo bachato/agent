@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/portainer/agent"
+	"github.com/portainer/portainer/api/logs"
 )
 
 // TLSService is a service used to generate TLS cert and key files
@@ -61,7 +62,7 @@ func createPEMEncodedFile(path, header string, data []byte) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer logs.CloseAndLogErr(file)
 
 	return pem.Encode(file, &pem.Block{Type: header, Bytes: data})
 }

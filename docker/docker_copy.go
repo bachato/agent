@@ -10,6 +10,7 @@ import (
 	"strconv"
 
 	"github.com/portainer/agent"
+	"github.com/portainer/portainer/api/logs"
 	"github.com/portainer/portainer/pkg/fips"
 	"github.com/portainer/portainer/pkg/librand"
 
@@ -79,16 +80,12 @@ func removeAndCopy(src, dst string, stackID int, stackName, assetPath string, ne
 	return nil
 }
 
-func removeUnpackerContainer(unpackerContainer container.CreateResponse) error {
+func removeUnpackerContainer(unpackerContainer container.CreateResponse) {
 	if err := ContainerDelete(unpackerContainer.ID, container.RemoveOptions{}); err != nil {
 		log.Error().
 			Str("ContainerID", unpackerContainer.ID).
 			Msg("Failed to remove unpacker container")
-
-		return err
 	}
-
-	return nil
 }
 
 func getUnpackerImage() string {
@@ -107,7 +104,7 @@ func pullUnpackerImage() error {
 		return errors.Wrap(err, "unable to pull unpacker image")
 	}
 
-	defer reader.Close()
+	defer logs.CloseAndLogErr(reader)
 	_, _ = io.Copy(io.Discard, reader)
 
 	return nil

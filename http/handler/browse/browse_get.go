@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/portainer/agent/filesystem"
+	"github.com/portainer/portainer/api/logs"
 	httperror "github.com/portainer/portainer/pkg/libhttp/error"
 	"github.com/portainer/portainer/pkg/libhttp/request"
 )
@@ -27,7 +28,7 @@ func (handler *Handler) browseGet(rw http.ResponseWriter, r *http.Request) *http
 	if err != nil {
 		return httperror.InternalServerError("Unable to open file", err)
 	}
-	defer fileDetails.File.Close()
+	defer logs.CloseAndLogErr(fileDetails.File)
 
 	rw.Header().Set("Content-Disposition", "attachment; filename=\""+fileDetails.BasePath+"\"")
 	http.ServeContent(rw, r, fileDetails.BasePath, fileDetails.ModTime, fileDetails.File)
@@ -56,7 +57,7 @@ func (handler *Handler) browseGetV1(rw http.ResponseWriter, r *http.Request) *ht
 	if err != nil {
 		return httperror.InternalServerError("Unable to open file", err)
 	}
-	defer fileDetails.File.Close()
+	defer logs.CloseAndLogErr(fileDetails.File)
 
 	rw.Header().Set("Content-Disposition", "attachment; filename=\""+fileDetails.BasePath+"\"")
 	http.ServeContent(rw, r, fileDetails.BasePath, fileDetails.ModTime, fileDetails.File)

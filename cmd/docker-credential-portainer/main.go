@@ -5,6 +5,7 @@ import (
 	"os"
 
 	credentials "github.com/docker/docker-credential-helpers/credentials"
+	"github.com/portainer/portainer/api/logs"
 )
 
 func main() {
@@ -12,7 +13,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("error opening file: %v", err)
 	}
-	defer f.Close()
+	defer logs.CloseAndLogErr(f)
 	log.SetOutput(f)
 
 	log.Printf("running portainer-credential-helper")

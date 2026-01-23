@@ -15,7 +15,7 @@ func TestKeyDataRace(t *testing.T) {
 	})
 
 	go func() {
-		mgr.SetKey(encodeKey(&edgeKey{}))
+		_ = mgr.SetKey(encodeKey(&edgeKey{}))
 	}()
 
 	time.Sleep(1 * time.Second)

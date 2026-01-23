@@ -7,6 +7,7 @@ import (
 	"os"
 
 	credentials "github.com/docker/docker-credential-helpers/credentials"
+	"github.com/portainer/portainer/api/logs"
 )
 
 type portainerHelper struct {
@@ -25,7 +26,7 @@ func (h portainerHelper) Get(serverURL string) (string, string, error) {
 	if err != nil {
 		log.Fatalf("error opening file: %v", err)
 	}
-	defer f.Close()
+	defer logs.CloseAndLogErr(f)
 	log.SetOutput(f)
 
 	if serverURL == "" {
@@ -39,7 +40,11 @@ func (h portainerHelper) Get(serverURL string) (string, string, error) {
 		log.Printf("Error getting credentials: %v", err)
 		return "", "", credentials.NewErrCredentialsNotFound()
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("Error closing response body: %v", err)
+		}
+	}()
 
 	var c credentials.Credentials
 

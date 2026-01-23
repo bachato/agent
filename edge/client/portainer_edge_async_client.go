@@ -5,7 +5,6 @@ import (
 	"cmp"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"hash/fnv"
 	"maps"
 	"net/http"
@@ -212,7 +211,7 @@ func (client *PortainerAsyncClient) GetEnvironmentID() (portainer.EndpointID, er
 }
 
 func (client *PortainerAsyncClient) GetEnvironmentStatus(flags ...string) (*PollStatusResponse, error) {
-	pollURL := fmt.Sprintf("%s/api/endpoints/edge/async", client.serverAddress)
+	pollURL := client.serverAddress + "/api/endpoints/edge/async"
 
 	payload := AsyncRequest{}
 	payload.EndpointId = client.getEndpointIDFn()
@@ -314,7 +313,7 @@ func gzipCompress(data []byte) (*bytes.Buffer, error) {
 	}
 
 	if len(data) < buf.Len() {
-		return nil, fmt.Errorf("compressed data is larger than original data")
+		return nil, errors.New("compressed data is larger than original data")
 	}
 
 	return buf, nil
@@ -364,7 +363,11 @@ func (client *PortainerAsyncClient) executeAsyncRequest(payload AsyncRequest, po
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Warn().Err(err).Msg("failed to close response body")
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		errorData := parseError(resp)
@@ -734,7 +737,11 @@ func snapshotHash(snapshot any) (uint32, bool) {
 	}
 
 	h := fnv.New32a()
-	h.Write(bytes.TrimSpace(b.Bytes()))
+	if _, err := h.Write(bytes.TrimSpace(b.Bytes())); err != nil {
+		log.Error().Err(err).Msg("could not hash the snapshot")
+
+		return 0, false
+	}
 
 	return h.Sum32(), true
 }

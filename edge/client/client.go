@@ -19,9 +19,7 @@ type APIClient struct {
 // NewAPIClient returns a pointer to a new APIClient instance
 func NewAPIClient() *APIClient {
 	return &APIClient{
-		httpClient: &http.Client{
-			Timeout: time.Second * 3,
-		},
+		httpClient: &http.Client{Timeout: 3 * time.Second},
 	}
 }
 
@@ -42,7 +40,11 @@ func (client *APIClient) GetEdgeKey(serverAddr string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Warn().Err(err).Msg("failed to close response body")
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		log.Error().Int("response_code", resp.StatusCode).Msg("GetEdgeKey operation failed")
@@ -51,8 +53,7 @@ func (client *APIClient) GetEdgeKey(serverAddr string) (string, error) {
 	}
 
 	var data getEdgeKeyResponse
-	err = json.NewDecoder(resp.Body).Decode(&data)
-	if err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		return "", err
 	}
 
@@ -65,9 +66,7 @@ type setEdgeKeyPayload struct {
 
 // SetEdgeKey executes a KeyCreate operation against the specified server
 func (client *APIClient) SetEdgeKey(serverAddr, key string) error {
-	payload := setEdgeKeyPayload{
-		Key: key,
-	}
+	payload := setEdgeKeyPayload{Key: key}
 
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -85,7 +84,11 @@ func (client *APIClient) SetEdgeKey(serverAddr, key string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Warn().Err(err).Msg("failed to close response body")
+		}
+	}()
 
 	if resp.StatusCode != http.StatusNoContent {
 		log.Error().Int("response_code", resp.StatusCode).Msg("SetEdgeKey operation failed")

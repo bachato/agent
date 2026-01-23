@@ -126,7 +126,7 @@ func (client *PortainerEdgeClient) GetEnvironmentID() (portainer.EndpointID, err
 		}
 	}
 
-	gkURL := fmt.Sprintf("%s/api/endpoints/global-key", client.serverAddress)
+	gkURL := client.serverAddress + "/api/endpoints/global-key"
 	req, err := http.NewRequest(http.MethodPost, gkURL, bytes.NewReader(payloadJson))
 	if err != nil {
 		return 0, err
@@ -138,7 +138,11 @@ func (client *PortainerEdgeClient) GetEnvironmentID() (portainer.EndpointID, err
 	if err != nil {
 		return 0, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Warn().Err(err).Msg("failed to close response body")
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		log.Debug().Int("response_code", resp.StatusCode).Msg("global key request failure")
@@ -178,7 +182,11 @@ func (client *PortainerEdgeClient) GetEnvironmentStatus(flags ...string) (*PollS
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Warn().Err(err).Msg("failed to close response body")
+		}
+	}()
 
 	cachedResp, ok := client.cachedResponse(resp)
 	if ok {
@@ -227,7 +235,11 @@ func (client *PortainerEdgeClient) GetEdgeStackConfig(edgeStackID int, version *
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Warn().Err(err).Msg("failed to close response body")
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		log.Error().Int("response_code", resp.StatusCode).Msg("GetEdgeStackConfig operation failed")
@@ -294,8 +306,11 @@ func (client *PortainerEdgeClient) SetEdgeStackStatus(
 			continue
 		}
 
-		io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
+		_, _ = io.Copy(io.Discard, resp.Body)
+
+		if err := resp.Body.Close(); err != nil {
+			log.Warn().Err(err).Msg("failed to close response body")
+		}
 
 		if resp.StatusCode < http.StatusInternalServerError {
 			break
@@ -343,8 +358,11 @@ func (client *PortainerEdgeClient) UpdatePolicyChartStatuses(statuses []portaine
 	if err != nil {
 		return err
 	}
-	io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
+
+	_, _ = io.Copy(io.Discard, resp.Body)
+	if err := resp.Body.Close(); err != nil {
+		return fmt.Errorf("failed to close response body: %w", err)
+	}
 
 	if resp.StatusCode != http.StatusNoContent {
 		log.Error().Int("response_code", resp.StatusCode).Msg("UpdatePolicyChartStatuses operation failed")
@@ -380,8 +398,10 @@ func (client *PortainerEdgeClient) SetEdgeJobStatus(edgeJobStatus agent.EdgeJobS
 		return err
 	}
 
-	io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	if err := resp.Body.Close(); err != nil {
+		return fmt.Errorf("failed to close response body: %w", err)
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		log.Error().Int("response_code", resp.StatusCode).Msg("SetEdgeJobStatus operation failed")
@@ -407,7 +427,11 @@ func (client *PortainerEdgeClient) GetEdgeConfig(id EdgeConfigID) (*EdgeConfig, 
 		return nil, err
 	}
 
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Warn().Err(err).Msg("failed to close response body")
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		log.Error().Int("response_code", resp.StatusCode).Msg("GetEdgeConfig operation failed")
@@ -442,8 +466,10 @@ func (client *PortainerEdgeClient) SetEdgeConfigState(id EdgeConfigID, state Edg
 		return err
 	}
 
-	io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	if err := resp.Body.Close(); err != nil {
+		return fmt.Errorf("failed to close response body: %w", err)
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		log.Error().Int("edge_config_id", int(id)).Stringer("state", state).Int("response_code", resp.StatusCode).Msg("SetEdgeConfigState operation failed")
@@ -503,7 +529,11 @@ func (client *PortainerEdgeClient) GetCharts(chartNames []string) ([]portainer.P
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Warn().Err(err).Msg("failed to close response body")
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		log.Error().Int("response_code", resp.StatusCode).Msg("GetCharts operation failed")
@@ -560,5 +590,6 @@ func mutateResponseForCaching(resp *PollStatusResponse) PollStatusResponse {
 			respForCache.Stacks[i].ForceRedeploy = false
 		}
 	}
+
 	return respForCache
 }

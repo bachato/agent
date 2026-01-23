@@ -42,8 +42,12 @@ func NewClusterService(runtimeConfiguration *agent.RuntimeConfig) *ClusterServic
 
 // Leave leaves the cluster.
 func (service *ClusterService) Leave() {
-	if service.cluster != nil {
-		service.cluster.Leave()
+	if service.cluster == nil {
+		return
+	}
+
+	if err := service.cluster.Leave(); err != nil {
+		log.Error().Err(err).Msg("failed to leave cluster")
 	}
 }
 

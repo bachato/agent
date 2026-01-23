@@ -14,6 +14,7 @@ import (
 	"github.com/portainer/agent/exec"
 	"github.com/portainer/agent/kubernetes"
 	portainer "github.com/portainer/portainer/api"
+	"github.com/portainer/portainer/api/logs"
 	"github.com/portainer/portainer/pkg/libhelm/options"
 	libhelmtypes "github.com/portainer/portainer/pkg/libhelm/types"
 
@@ -102,9 +103,14 @@ func (pm *PolicyManager) installOrUpgradeCharts(policyChartSummaries []string, c
 	if err != nil {
 		pm.setChartsToFailed(policyChartSummaries, "Failed to create temporary directory for charts")
 		log.Error().Err(err).Msg("failed to create temporary directory for charts")
+
 		return
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			log.Warn().Err(err).Msg("Failed to remove temporary directory for charts")
+		}
+	}()
 
 	for _, chartBundle := range chartBundles {
 		if err := pm.deleteResourcesBeforeInstall(&chartBundle); err != nil {
@@ -135,7 +141,7 @@ func (pm *PolicyManager) installOrUpgradeCharts(policyChartSummaries []string, c
 		}
 
 		// Save chart to temporary file
-		chartPath := filepath.Join(tempDir, fmt.Sprintf("%s.tgz", chartBundle.ChartName))
+		chartPath := filepath.Join(tempDir, chartBundle.ChartName+".tgz")
 		if err := os.WriteFile(chartPath, chartData, 0644); err != nil {
 			pm.setChartToFailed(chartBundle.ChartName, "Failed to save chart file")
 			log.Error().Err(err).Str("chart", chartBundle.ChartName).Msg("failed to save chart file")
@@ -150,7 +156,7 @@ func (pm *PolicyManager) installOrUpgradeCharts(policyChartSummaries []string, c
 		}
 
 		// Save values to a temporary file
-		valuesPath := filepath.Join(tempDir, fmt.Sprintf("%s.yaml", chartBundle.ChartName))
+		valuesPath := filepath.Join(tempDir, chartBundle.ChartName+".yaml")
 		if err := os.WriteFile(valuesPath, valuesData, 0644); err != nil {
 			pm.setChartToFailed(chartBundle.ChartName, "Failed to save chart file")
 			log.Error().Err(err).Str("chart", chartBundle.ChartName).Msg("failed to save chart file")
@@ -204,29 +210,33 @@ func (pm *PolicyManager) applyPreReleaseManifest(chartBundle *portainer.PolicyCh
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
-	defer os.Remove(tempFile.Name())
-	defer tempFile.Close()
+	defer func() {
+		if err := os.Remove(tempFile.Name()); err != nil {
+			log.Warn().Err(err).Msg("Failed to remove temporary pre-release manifest file")
+		}
+	}()
+	defer logs.CloseAndLogErr(tempFile)
 
 	// Write manifest to file
 	decoded, err := base64.StdEncoding.DecodeString(chartBundle.PreReleaseManifest)
 	if err != nil {
 		return fmt.Errorf("failed to decode pre-release manifest: %w", err)
 	}
+
 	if _, err := tempFile.Write(decoded); err != nil {
 		return fmt.Errorf("failed to write manifest to temp file: %w", err)
 	}
-	tempFile.Close()
+	logs.CloseAndLogErr(tempFile)
 
 	// Create KubernetesDeployer and use Deploy
 	kubernetesDeployer := exec.NewKubernetesDeployer(pm.kubeClient)
 
 	// Apply the manifest using KubernetesDeployer
-	err = kubernetesDeployer.Deploy(context.Background(), chartBundle.ChartName, []string{tempFile.Name()}, deployer.DeployOptions{
+	if err := kubernetesDeployer.Deploy(context.Background(), chartBundle.ChartName, []string{tempFile.Name()}, deployer.DeployOptions{
 		DeployerBaseOptions: deployer.DeployerBaseOptions{
 			Namespace: chartBundle.Namespace,
 		},
-	})
-	if err != nil {
+	}); err != nil {
 		return fmt.Errorf("failed to apply pre-release manifest: %w", err)
 	}
 
@@ -503,8 +513,12 @@ func (pm *PolicyManager) restoreEnvironmentSettings(chartName string, restoreBun
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
-	defer os.Remove(tempFile.Name())
-	defer tempFile.Close()
+	defer func() {
+		if err := os.Remove(tempFile.Name()); err != nil {
+			log.Warn().Err(err).Msg("failed to remove temporary file")
+		}
+	}()
+	defer logs.CloseAndLogErr(tempFile)
 
 	if _, err := tempFile.Write(manifestBytes); err != nil {
 		return fmt.Errorf("failed to write manifest: %w", err)

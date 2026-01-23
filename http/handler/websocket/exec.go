@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/portainer/portainer/api/logs"
 	httperror "github.com/portainer/portainer/pkg/libhttp/error"
 	"github.com/portainer/portainer/pkg/libhttp/request"
 	"github.com/portainer/portainer/pkg/validate"
@@ -30,7 +31,7 @@ func (handler *Handler) handleExecRequest(rw http.ResponseWriter, r *http.Reques
 	if err != nil {
 		return httperror.InternalServerError("An error occurred during websocket exec operation: unable to upgrade connection", err)
 	}
-	defer websocketConn.Close()
+	defer logs.CloseAndLogErr(websocketConn)
 
 	err = hijackExecStartOperation(websocketConn, execID)
 	if err != nil {

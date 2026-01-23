@@ -1,7 +1,6 @@
 package kubernetesproxy
 
 import (
-	"fmt"
 	"net/http"
 	"os"
 
@@ -13,6 +12,7 @@ func (handler *Handler) kubernetesOperation(rw http.ResponseWriter, request *htt
 	// If DEV_KUBECONFIG_PATH is set, use kubeconfig for authentication (development mode)
 	if os.Getenv("DEV_KUBECONFIG_PATH") != "" {
 		http.StripPrefix("/kubernetes", handler.kubernetesProxy).ServeHTTP(rw, request)
+
 		return nil
 	}
 
@@ -23,10 +23,12 @@ func (handler *Handler) kubernetesOperation(rw http.ResponseWriter, request *htt
 		if err != nil {
 			return httperror.InternalServerError("Unable to read service account token file", err)
 		}
+
 		token = string(adminToken)
 	}
 
-	request.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+	request.Header.Set("Authorization", "Bearer "+token)
 	http.StripPrefix("/kubernetes", handler.kubernetesProxy).ServeHTTP(rw, request)
+
 	return nil
 }
