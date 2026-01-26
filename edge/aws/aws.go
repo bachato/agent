@@ -9,6 +9,7 @@ import (
 
 	"github.com/portainer/agent"
 	"github.com/portainer/portainer/api/edge"
+	"github.com/portainer/portainer/pkg/fips"
 	"github.com/portainer/portainer/pkg/retry"
 
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
@@ -187,6 +188,11 @@ func getOrRefreshGlobalClient(awsConfig *agent.AWSConfig) (api.Client, error) {
 
 	factory := api.DefaultClientFactory{}
 
+	fipsEndpointState := awssdk.FIPSEndpointStateUnset
+	if fips.FIPSMode() {
+		fipsEndpointState = awssdk.FIPSEndpointStateEnabled
+	}
+
 	cfg, err := config.LoadDefaultConfig(
 		context.TODO(),
 		config.WithRegion(awsConfig.Region),
@@ -198,6 +204,7 @@ func getOrRefreshGlobalClient(awsConfig *agent.AWSConfig) (api.Client, error) {
 			),
 		),
 		config.WithRetryMode(awssdk.RetryModeStandard), // use standard aws sdk retry for the next step
+		config.WithUseFIPSEndpoint(fipsEndpointState),
 	)
 	if err != nil {
 		log.Err(err).Msg("unable to build AWS client config")

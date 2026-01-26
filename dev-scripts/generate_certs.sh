@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # very much just copied from https://lemariva.com/blog/2019/12/portainer-managing-docker-engine-remotely
 # production use should involve a real external certificate management system
@@ -68,10 +68,10 @@ gen_ca() {
   encryption=${1:-'-sha256'}
 
   info " > > > Generate the CA cert < < <"
-  openssl genrsa -aes256 -out ${ca[key]} 4096
-  # enter a pass phrase to protect the ca-key
+  # Removed -aes256 for non-interactive dev use
+  openssl genrsa -out ${ca[key]} 4096
 
-  openssl req -new -x509 -days 365 ${encryption} -key ${ca[key]} -out ${ca[cert]}
+  openssl req -new -x509 -days 365 ${encryption} -key ${ca[key]} -out ${ca[cert]} -subj "/CN=Portainer Dev CA"
 }
 
 gen_server_cert() {
