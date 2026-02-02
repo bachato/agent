@@ -63,7 +63,7 @@ func (deployer *KubernetesDeployer) operation(_ context.Context, _ string, manif
 
 	operations := map[string]func(context.Context, []string) (string, error){
 		"apply":           client.ApplyDynamic,
-		"delete":          client.Delete,
+		"delete":          client.DeleteDynamic,
 		"rollout-restart": client.RolloutRestart,
 	}
 

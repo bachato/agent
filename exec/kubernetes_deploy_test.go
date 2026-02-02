@@ -16,14 +16,14 @@ type mockKubectlClient struct {
 	rolloutRestartFunc func(ctx context.Context, resources []string) error
 }
 
-func (m *mockKubectlClient) Apply(ctx context.Context, files []string) error {
+func (m *mockKubectlClient) ApplyDynamic(ctx context.Context, files []string) error {
 	if m.applyFunc != nil {
 		return m.applyFunc(ctx, files)
 	}
 	return nil
 }
 
-func (m *mockKubectlClient) Delete(ctx context.Context, files []string) error {
+func (m *mockKubectlClient) DeleteDynamic(ctx context.Context, files []string) error {
 	if m.deleteFunc != nil {
 		return m.deleteFunc(ctx, files)
 	}
@@ -39,8 +39,8 @@ func (m *mockKubectlClient) RolloutRestart(ctx context.Context, resources []stri
 
 func testExecuteKubectlOperation(client *mockKubectlClient, operation string, manifestFiles []string) error {
 	operations := map[string]func(context.Context, []string) error{
-		"apply":           client.Apply,
-		"delete":          client.Delete,
+		"apply":           client.ApplyDynamic,
+		"delete":          client.DeleteDynamic,
 		"rollout-restart": client.RolloutRestart,
 	}
 
