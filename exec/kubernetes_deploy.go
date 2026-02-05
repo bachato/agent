@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/pkg/errors"
 	"github.com/portainer/agent"
@@ -20,14 +21,28 @@ var (
 
 // KubernetesDeployer represents a service to deploy resources inside a Kubernetes environment.
 type KubernetesDeployer struct {
-	kubeClient *kubernetes.KubeClient
+	kubeClient   *kubernetes.KubeClient
+	helmDeployer *HelmDeployer
 }
 
 // NewKubernetesDeployer initializes a new KubernetesDeployer service.
 func NewKubernetesDeployer(kubeClient *kubernetes.KubeClient) *KubernetesDeployer {
+	helmDeployer := NewHelmDeployer(kubeClient)
 	return &KubernetesDeployer{
-		kubeClient: kubeClient,
+		kubeClient:   kubeClient,
+		helmDeployer: helmDeployer,
 	}
+}
+
+// isHelmDeployment checks if the deployment is a Helm deployment
+// by looking for the HELM_CHART_PATH environment variable
+func isHelmDeployment(env []string) bool {
+	for _, e := range env {
+		if strings.HasPrefix(e, "HELM_CHART_PATH=") {
+			return true
+		}
+	}
+	return false
 }
 
 func (deployer *KubernetesDeployer) operation(_ context.Context, _ string, manifests []string, operation, namespace string) error {
@@ -86,21 +101,33 @@ func (deployer *KubernetesDeployer) operation(_ context.Context, _ string, manif
 // it will use kubectl to deploy the manifest.
 // kubectl uses in-cluster config.
 func (deployer *KubernetesDeployer) Deploy(ctx context.Context, name string, manifests []string, options deployer.DeployOptions) error {
+	if isHelmDeployment(options.Env) {
+		return deployer.helmDeployer.Deploy(ctx, name, manifests, options)
+	}
 	return deployer.operation(ctx, name, manifests, "apply", options.Namespace)
 }
 
 func (deployer *KubernetesDeployer) Remove(ctx context.Context, name string, manifests []string, options deployer.RemoveOptions) error {
+	if isHelmDeployment(options.Env) {
+		return deployer.helmDeployer.Remove(ctx, name, manifests, options)
+	}
 	return deployer.operation(ctx, name, manifests, "delete", options.Namespace)
 }
 
 // Pull is a dummy method for Kube
 func (deployer *KubernetesDeployer) Pull(ctx context.Context, name string, manifests []string, options deployer.PullOptions) error {
+	if isHelmDeployment(options.Env) {
+		return deployer.helmDeployer.Pull(ctx, name, manifests, options)
+	}
 	return nil
 }
 
 // Validate is a dummy method for Kubernetes manifest validation
 // https://portainer.atlassian.net/browse/EE-6292?focusedCommentId=29674
 func (deployer *KubernetesDeployer) Validate(ctx context.Context, name string, manifests []string, options deployer.ValidateOptions) error {
+	if isHelmDeployment(options.Env) {
+		return deployer.helmDeployer.Validate(ctx, name, manifests, options)
+	}
 	return nil
 }
 

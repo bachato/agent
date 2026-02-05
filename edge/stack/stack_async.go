@@ -106,6 +106,7 @@ func (manager *StackManager) buildDeployerParams(stackPayload edge.StackPayload,
 	stack.FileFolder = getStackFileFolder(stack)
 	stack.Namespace = stackPayload.Namespace
 	stack.EdgeUpdateID = stackPayload.EdgeUpdateID
+	stack.HelmConfig = stackPayload.HelmConfig
 
 	// When to force recreate the stack
 	// 1. When the stack is updated by GitOps with the ForceUpdate flag set to true
@@ -119,11 +120,17 @@ func (manager *StackManager) buildDeployerParams(stackPayload edge.StackPayload,
 		return err
 	}
 
-	if err := manager.addRegistryToEntryFile(&stackPayload); err != nil {
-		return err
+	log.Debug().Str("entry_file_name", stackPayload.EntryFileName).Str("helm_chart_path", stack.HelmConfig.ChartPath).Msg("adding registry credentials to stack entry file if needed")
+	if !IsHelmDeploymentStack(stack) {
+		if err := manager.addRegistryToEntryFile(&stackPayload); err != nil {
+			return err
+		}
 	}
 	// `manager.addRegistryToEntryFile` may have added new env vars, so we need to reassign them here
 	stack.EnvVars = append(stackPayload.EnvVars, edgeIdPair)
+
+	// Handle Helm-specific configuration
+	addHelmConfigToStack(stack, &stackPayload)
 
 	if !deleteStack {
 		// Apply Kubernetes labels to manifest if this is a Kubernetes edge stack

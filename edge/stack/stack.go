@@ -151,6 +151,7 @@ func (manager *StackManager) processStack(stackID int, stackStatus client.StackS
 	stack.EdgeUpdateID = stackPayload.EdgeUpdateID
 	stack.CreatedBy = stackPayload.CreatedBy
 	stack.CreatedByUserId = stackPayload.CreatedByUserId
+	stack.HelmConfig = stackPayload.HelmConfig
 
 	// When to force recreate the stack
 	// 1. When the stack is updated by GitOps with the ForceUpdate flag set to true
@@ -162,11 +163,17 @@ func (manager *StackManager) processStack(stackID int, stackStatus client.StackS
 		return err
 	}
 
-	if err := manager.addRegistryToEntryFile(stackPayload); err != nil {
-		return err
+	log.Debug().Str("entry_file_name", stackPayload.EntryFileName).Str("helm_chart_path", stack.HelmConfig.ChartPath).Msg("adding registry credentials to stack entry file if needed")
+	if !IsHelmDeploymentStack(stack) {
+		if err := manager.addRegistryToEntryFile(stackPayload); err != nil {
+			return err
+		}
 	}
 	// `manager.addRegistryToEntryFile` may have added new env vars, so we need to reassign them here
 	stack.EnvVars = append(stackPayload.EnvVars, edgeIdPair)
+
+	// Handle Helm-specific configuration
+	addHelmConfigToStack(stack, stackPayload)
 
 	// Apply Kubernetes labels to manifest if this is a Kubernetes edge stack
 	if err := manager.applyK8sLabelsIfNeeded(stack, stackPayload.DirEntries); err != nil {
@@ -241,12 +248,17 @@ func (manager *StackManager) performActionOnStack() {
 	log.Debug().Str("name", stackName).Str("status", stack.Status.String()).Str("action", stack.Action.String()).Msg("evaluating stack")
 	switch stack.Status {
 	case StatusAwaitingDeployedStatus, StatusAwaitingRemovedStatus, StatusDeployed:
-		if err := manager.checkStackStatus(ctx, stackName, stack, deployer.CheckStatusOptions{
+		checkStatusOptions := deployer.CheckStatusOptions{
 			StackFileLocation: stackFileLocation,
 			DeployerBaseOptions: deployer.DeployerBaseOptions{
 				Namespace: stack.Namespace,
 			},
-		}); err != nil {
+		}
+
+		if IsHelmDeploymentStack(stack) {
+			checkStatusOptions.Env = append(checkStatusOptions.Env, "HELM_CHART_PATH="+stack.HelmConfig.ChartPath)
+		}
+		if err := manager.checkStackStatus(ctx, stackName, stack, checkStatusOptions); err != nil {
 			log.Error().Err(err).Msg("unable to check Edge stack status")
 		}
 		return
@@ -358,6 +370,8 @@ func (manager *StackManager) checkStackStatus(ctx context.Context, stackName str
 		Int("stack_identifier", stack.ID).
 		Str("stack_name", stackName).
 		Str("status", stack.Status.String()).
+		Str("helm_chart_path", stack.HelmConfig.ChartPath).
+		Strs("env", options.Env).
 		Msg("checking stack status")
 
 	requiredStatus := libstack.StatusRemoved

@@ -40,3 +40,7 @@ func getStackFileFolder(stack *edgeStack) string {
 
 	return folder
 }
+
+func IsHelmDeploymentStack(stack *edgeStack) bool {
+	return stack.HelmConfig.ChartPath != ""
+}
