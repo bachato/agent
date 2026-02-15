@@ -9,9 +9,7 @@ import (
 )
 
 // addHelmConfigToStack adds Helm-specific configuration as environment variables to the stack.
-// This includes the Helm chart path and optionally the Helm values files as a comma-separated list.
-// Future Helm options (e.g., --atomic, --wait, --timeout) can be easily added by extending
-// the StackPayload struct without modifying this function's signature.
+// This includes the Helm chart path, values files, atomic flag, and timeout settings.
 func addHelmConfigToStack(stack *edgeStack, stackPayload *edge.StackPayload) {
 	if !IsHelmDeploymentStack(stack) {
 		return
@@ -21,6 +19,7 @@ func addHelmConfigToStack(stack *edgeStack, stackPayload *edge.StackPayload) {
 		Str("helm_chart_path", stackPayload.HelmConfig.ChartPath).
 		Int("helm_values_files_count", len(stackPayload.HelmConfig.ValuesFiles)).
 		Bool("helm_atomic", stackPayload.HelmConfig.Atomic).
+		Str("helm_timeout", stackPayload.HelmConfig.Timeout).
 		Msg("processing Helm chart stack")
 
 	// Add Helm configuration as environment variables for the deployer
@@ -45,10 +44,13 @@ func addHelmConfigToStack(stack *edgeStack, stackPayload *edge.StackPayload) {
 		})
 	}
 
-	// Future Helm options can be added here, for example:
-	// if stackPayload.HelmTimeout != "" {
-	//     helmEnvVars = append(helmEnvVars, portainer.Pair{Name: "HELM_TIMEOUT", Value: stackPayload.HelmTimeout})
-	// }
+	// Add timeout for Helm operations if specified
+	if stackPayload.HelmConfig.Timeout != "" {
+		helmEnvVars = append(helmEnvVars, portainer.Pair{
+			Name:  "HELM_TIMEOUT",
+			Value: stackPayload.HelmConfig.Timeout,
+		})
+	}
 
 	stack.EnvVars = append(stack.EnvVars, helmEnvVars...)
 }

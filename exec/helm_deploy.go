@@ -86,6 +86,21 @@ func (d *HelmDeployer) Deploy(ctx context.Context, name string, filePaths []stri
 		}
 	}
 
+	// Parse timeout duration from config or use default
+	timeout := 300 * time.Second // Default timeout: 5 minutes
+	if helmConfig.Timeout != "" {
+		parsedTimeout, err := time.ParseDuration(helmConfig.Timeout)
+		if err != nil {
+			log.Warn().
+				Str("context", "HelmDeployer").
+				Str("timeout_value", helmConfig.Timeout).
+				Err(err).
+				Msg("failed to parse timeout, using default")
+		} else {
+			timeout = parsedTimeout
+		}
+	}
+
 	// Prepare install options for Helm SDK
 	installOpts := options.InstallOptions{
 		Name:                    releaseName,
@@ -93,7 +108,7 @@ func (d *HelmDeployer) Deploy(ctx context.Context, name string, filePaths []stri
 		Chart:                   absoluteChartPath,
 		Values:                  mergedValues,
 		Wait:                    true,
-		Timeout:                 300 * time.Second,
+		Timeout:                 timeout,
 		CreateNamespace:         true,
 		Atomic:                  helmConfig.Atomic,
 		KubernetesClusterAccess: d.getKubeAccess(),
@@ -231,6 +246,7 @@ type helmConfig struct {
 	ChartPath   string
 	ValuesFiles []string
 	Atomic      bool
+	Timeout     string
 }
 
 // parseHelmConfig extracts Helm configuration from DeployOptions
@@ -265,6 +281,9 @@ func (d *HelmDeployer) parseHelmConfigFromBase(baseOpts deployer.DeployerBaseOpt
 		case "HELM_ATOMIC":
 			// Parse atomic flag (enables automatic rollback on failure)
 			config.Atomic = value == "true" || value == "1"
+		case "HELM_TIMEOUT":
+			// Parse timeout for Helm operations (e.g., "5m0s", "10m", "1h30m")
+			config.Timeout = value
 		}
 	}
 
@@ -273,6 +292,7 @@ func (d *HelmDeployer) parseHelmConfigFromBase(baseOpts deployer.DeployerBaseOpt
 		Str("chart_path", config.ChartPath).
 		Int("values_files_count", len(config.ValuesFiles)).
 		Bool("atomic", config.Atomic).
+		Str("timeout", config.Timeout).
 		Msg("parsed Helm configuration")
 
 	return config, nil
