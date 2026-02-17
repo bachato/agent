@@ -22,6 +22,8 @@ import (
 
 const requestRetryWait = 5 * time.Second
 
+var requestRetrySleep = time.Sleep
+
 // PortainerEdgeClient is used to execute HTTP requests against the Portainer API
 type PortainerEdgeClient struct {
 	version         string
@@ -301,7 +303,7 @@ func (client *PortainerEdgeClient) SetEdgeStackStatus(
 				Int("edgeStackID", edgeStackID).
 				Msg("could not set edge stack status, retrying...")
 
-			time.Sleep(requestRetryWait)
+			requestRetrySleep(requestRetryWait)
 
 			continue
 		}
@@ -321,7 +323,7 @@ func (client *PortainerEdgeClient) SetEdgeStackStatus(
 			Int("edgeStackID", edgeStackID).
 			Msg("could not set edge stack status, retrying...")
 
-		time.Sleep(requestRetryWait)
+		requestRetrySleep(requestRetryWait)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -347,21 +349,42 @@ func (client *PortainerEdgeClient) UpdatePolicyChartStatuses(statuses []portaine
 	}
 
 	requestURL := fmt.Sprintf("%s/api/endpoints/%d/edge/charts/statuses", client.serverAddress, client.getEndpointIDFn())
-	req, err := http.NewRequest(http.MethodPut, requestURL, bytes.NewReader(data))
-	if err != nil {
-		return err
-	}
 
-	req.Header.Set(agent.HTTPEdgeIdentifierHeaderName, client.edgeID)
+	var resp *http.Response
+	for {
+		req, err := http.NewRequest(http.MethodPut, requestURL, bytes.NewReader(data))
+		if err != nil {
+			return err
+		}
 
-	resp, err := client.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
+		req.Header.Set(agent.HTTPEdgeIdentifierHeaderName, client.edgeID)
 
-	_, _ = io.Copy(io.Discard, resp.Body)
-	if err := resp.Body.Close(); err != nil {
-		return fmt.Errorf("failed to close response body: %w", err)
+		resp, err = client.httpClient.Do(req)
+		if err != nil {
+			log.Error().
+				Err(err).
+				Msg("could not update policy chart statuses, retrying...")
+
+			requestRetrySleep(requestRetryWait)
+
+			continue
+		}
+
+		_, _ = io.Copy(io.Discard, resp.Body)
+
+		if err := resp.Body.Close(); err != nil {
+			log.Warn().Err(err).Msg("failed to close response body")
+		}
+
+		if resp.StatusCode < http.StatusInternalServerError {
+			break
+		}
+
+		log.Debug().
+			Str("status", resp.Status).
+			Msg("could not update policy chart statuses, retrying...")
+
+		requestRetrySleep(requestRetryWait)
 	}
 
 	if resp.StatusCode != http.StatusNoContent {

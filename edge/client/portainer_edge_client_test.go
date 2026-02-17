@@ -1,9 +1,14 @@
 package client
 
 import (
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/portainer/agent"
 	portainer "github.com/portainer/portainer/api"
@@ -74,4 +79,126 @@ func TestMutateResponseForCaching(t *testing.T) {
 	require.Equal(t, 3, originalResp.Stacks[2].ID)
 	require.Equal(t, "stack3", originalResp.Stacks[2].Name)
 	require.True(t, originalResp.Stacks[2].ForceRedeploy)
+}
+
+func TestUpdatePolicyChartStatuses_RetriesOnServerError(t *testing.T) {
+	fips.InitFIPS(false)
+	mockRetrySleep(t)
+
+	var requests int32
+	httpClient := BuildHTTPClient(30, &agent.Options{})
+	httpClient.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		atomic.AddInt32(&requests, 1)
+		require.Equal(t, http.MethodPut, r.Method)
+		require.Equal(t, "/api/endpoints/1/edge/charts/statuses", r.URL.Path)
+		require.Equal(t, "edge-id", r.Header.Get(agent.HTTPEdgeIdentifierHeaderName))
+
+		if atomic.LoadInt32(&requests) < 3 {
+			return &http.Response{
+				StatusCode: http.StatusInternalServerError,
+				Body:       io.NopCloser(strings.NewReader("")),
+				Header:     make(http.Header),
+				Request:    r,
+			}, nil
+		}
+
+		return &http.Response{
+			StatusCode: http.StatusNoContent,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Header:     make(http.Header),
+			Request:    r,
+		}, nil
+	})
+
+	client := &PortainerEdgeClient{
+		edgeID:          "edge-id",
+		getEndpointIDFn: func() portainer.EndpointID { return 1 },
+		httpClient:      httpClient,
+		serverAddress:   "http://edge.test",
+	}
+
+	err := client.UpdatePolicyChartStatuses([]portainer.PolicyChartStatus{{ChartName: "gatekeeper"}})
+	require.NoError(t, err)
+	require.Equal(t, int32(3), atomic.LoadInt32(&requests))
+}
+
+func TestUpdatePolicyChartStatuses_RetriesOnTransportError(t *testing.T) {
+	fips.InitFIPS(false)
+	mockRetrySleep(t)
+
+	var requests int32
+	httpClient := BuildHTTPClient(30, &agent.Options{})
+	httpClient.httpClient.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		atomic.AddInt32(&requests, 1)
+		require.Equal(t, http.MethodPut, req.Method)
+		require.Equal(t, "/api/endpoints/1/edge/charts/statuses", req.URL.Path)
+		require.Equal(t, "edge-id", req.Header.Get(agent.HTTPEdgeIdentifierHeaderName))
+
+		if atomic.LoadInt32(&requests) == 1 {
+			return nil, errors.New("dial timeout")
+		}
+
+		return &http.Response{
+			StatusCode: http.StatusNoContent,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	})
+
+	client := &PortainerEdgeClient{
+		edgeID:          "edge-id",
+		getEndpointIDFn: func() portainer.EndpointID { return 1 },
+		httpClient:      httpClient,
+		serverAddress:   "http://edge.test",
+	}
+
+	err := client.UpdatePolicyChartStatuses([]portainer.PolicyChartStatus{{ChartName: "gatekeeper"}})
+	require.NoError(t, err)
+	require.Equal(t, int32(2), atomic.LoadInt32(&requests))
+}
+
+func TestUpdatePolicyChartStatuses_DoesNotRetryOnClientError(t *testing.T) {
+	fips.InitFIPS(false)
+	mockRetrySleep(t)
+
+	var requests int32
+	httpClient := BuildHTTPClient(30, &agent.Options{})
+	httpClient.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		atomic.AddInt32(&requests, 1)
+		return &http.Response{
+			StatusCode: http.StatusBadRequest,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Header:     make(http.Header),
+			Request:    r,
+		}, nil
+	})
+
+	client := &PortainerEdgeClient{
+		edgeID:          "edge-id",
+		getEndpointIDFn: func() portainer.EndpointID { return 1 },
+		httpClient:      httpClient,
+		serverAddress:   "http://edge.test",
+	}
+
+	err := client.UpdatePolicyChartStatuses([]portainer.PolicyChartStatus{{ChartName: "gatekeeper"}})
+	require.Error(t, err)
+	require.Equal(t, int32(1), atomic.LoadInt32(&requests))
+}
+
+func mockRetrySleep(t *testing.T) {
+	t.Helper()
+
+	orig := requestRetrySleep
+	requestRetrySleep = func(time.Duration) {}
+
+	t.Cleanup(func() {
+		requestRetrySleep = orig
+	})
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }
