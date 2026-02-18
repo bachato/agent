@@ -16,6 +16,7 @@ import (
 
 	"github.com/portainer/agent"
 	"github.com/portainer/agent/docker"
+	aos "github.com/portainer/agent/os"
 	"github.com/portainer/agent/kubernetes"
 	portainer "github.com/portainer/portainer/api"
 	"github.com/portainer/portainer/api/edge"
@@ -46,6 +47,7 @@ type PortainerAsyncClient struct {
 	edgeKey                 string
 	agentPlatformIdentifier agent.ContainerPlatform
 	commandTimestamp        time.Time
+	timeZoneStr             string // Cached timezone string to avoid repeated allocations
 	pendingESCommandsTS     map[portainer.EdgeStackID]versionAndTS
 	pendingCmdsMutex        sync.Mutex
 	metaFields              agent.EdgeMetaFields
@@ -89,6 +91,7 @@ func NewPortainerAsyncClient(
 		httpClient:              httpClient,
 		agentPlatformIdentifier: containerPlatform,
 		commandTimestamp:        time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC),
+		timeZoneStr:             time.Local.String(),
 		pendingESCommandsTS:     make(map[portainer.EdgeStackID]versionAndTS),
 		metaFields:              metaFields,
 		createSnapshotFn:        clientOpts.dockerSnapshotter,
@@ -346,9 +349,17 @@ func (client *PortainerAsyncClient) executeAsyncRequest(payload AsyncRequest, po
 
 	req.Header.Set(agent.HTTPEdgeIdentifierHeaderName, client.edgeID)
 	req.Header.Set(agent.HTTPResponseAgentHeaderName, client.version)
-	req.Header.Set(agent.HTTPResponseAgentTimeZone, time.Local.String())
+	req.Header.Set(agent.HTTPResponseAgentTimeZone, client.timeZoneStr)
 	req.Header.Set(agent.HTTPResponseUpdateIDHeaderName, strconv.Itoa(client.metaFields.UpdateID))
 	req.Header.Set(agent.HTTPResponseAgentPlatform, strconv.Itoa(int(client.agentPlatformIdentifier)))
+
+	// Send container engine info only during initialization (endpointID == 0)
+	if client.getEndpointIDFn() == 0 {
+		osModule := aos.DetermineContainerPlatform()
+		if containerEngine := aos.GetContainerEngineName(osModule); containerEngine != "" {
+			req.Header.Set(agent.HTTPResponseAgentContainerEngine, containerEngine)
+		}
+	}
 
 	log.Debug().
 		Str(agent.HTTPEdgeIdentifierHeaderName, client.edgeID).

@@ -35,3 +35,16 @@ func DetermineContainerPlatform() agent.ContainerPlatform {
 func GetKubernetesPodIP() string {
 	return os.Getenv(KubernetesPodIP)
 }
+
+// GetContainerEngineName returns the container engine name (e.g., "docker" or "podman").
+// Returns empty string for non-container platforms (e.g., Kubernetes).
+func GetContainerEngineName(platform agent.ContainerPlatform) string {
+	switch platform {
+	case agent.PlatformDocker:
+		return "docker"
+	case agent.PlatformPodman:
+		return "podman"
+	default:
+		return ""
+	}
+}
