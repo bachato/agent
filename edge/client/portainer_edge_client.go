@@ -563,10 +563,7 @@ func (client *PortainerEdgeClient) GetCharts(chartNames []string) ([]portainer.P
 		return nil, nil, fmt.Errorf("GetCharts operation failed with status code %d", resp.StatusCode)
 	}
 
-	var res struct {
-		PolicyChartBundles    []portainer.PolicyChartBundle   `json:"policyChartBundles"`
-		RestoreSettingsBundle portainer.RestoreSettingsBundle `json:"restoreSettingsBundle"`
-	}
+	var res PolicyHelmCharts
 	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
 		return nil, nil, fmt.Errorf("failed to decode response: %w", err)
 	}

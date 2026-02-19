@@ -252,6 +252,8 @@ func (service *PollService) processAsyncCommands(commands []client.AsyncCommand)
 			err = service.processNormalStackCommand(ctx, command)
 		case "edgeConfig":
 			err = service.processEdgeConfigCommand(command)
+		case "policyHelmCharts":
+			err = service.processPolicyHelmCharts(command)
 		default:
 			err = newOperationError(command.Type, "n/a", errors.New("command type not supported"))
 		}
@@ -447,4 +449,44 @@ func (service *PollService) processEdgeConfigCommand(cmd client.AsyncCommand) er
 	}
 
 	return newOperationError("edgeConfig", cmd.Operation, err)
+}
+
+func (service *PollService) processPolicyHelmCharts(cmd client.AsyncCommand) error {
+	var policies client.PolicyHelmCharts
+
+	if err := mapstructure.Decode(cmd.Value, &policies); err != nil {
+		return newOperationError("processPolicyHelmCharts", cmd.Operation, err)
+	}
+
+	if asyncClient, ok := service.portainerClient.(*client.PortainerAsyncClient); ok {
+		asyncClient.SetChartsResponse(&policies)
+	} else {
+		return newOperationError("processPolicyHelmCharts", cmd.Operation, errors.New("portainer client does not support setting policy helm charts response"))
+	}
+
+	if service.policies == nil {
+		service.policies = make(map[string]string)
+	}
+
+	for _, chart := range policies.PolicyChartBundles {
+		switch EdgeAsyncCommandOperation(cmd.Operation) {
+		case EdgeAsyncCommandOpAdd, EdgeAsyncCommandOpReplace:
+			service.policies[chart.ChartName] = chart.Fingerprint
+
+		case EdgeAsyncCommandOpRemove:
+			delete(service.policies, chart.ChartName)
+		}
+	}
+
+	var policyChartSummaries []portainer.PolicyChartSummary
+	for chartName, fingerprint := range service.policies {
+		policyChartSummaries = append(policyChartSummaries, portainer.PolicyChartSummary{
+			ChartName:   chartName,
+			Fingerprint: fingerprint,
+		})
+	}
+
+	service.policyManager.ProcessPolicyHelmCharts(policyChartSummaries)
+
+	return nil
 }

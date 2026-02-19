@@ -93,6 +93,11 @@ type StackStatus struct {
 	RePullImage bool
 }
 
+type PolicyHelmCharts struct {
+	PolicyChartBundles    []portainer.PolicyChartBundle   `json:"policyChartBundles"`
+	RestoreSettingsBundle portainer.RestoreSettingsBundle `json:"restoreSettingsBundle"`
+}
+
 type setEndpointIDFn func(portainer.EndpointID)
 type getEndpointIDFn func() portainer.EndpointID
 

@@ -56,6 +56,7 @@ type PollService struct {
 	pingTicker       *time.Ticker
 	snapshotTicker   *time.Ticker
 	commandTicker    *time.Ticker
+	policies         map[string]string // Name -> Fingerprint
 }
 
 type pollServiceConfig struct {

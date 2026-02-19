@@ -61,6 +61,8 @@ type PortainerAsyncClient struct {
 	stackLogCollectionQueue []LogCommandData
 	liveLogCollectors       map[string]*LiveLogCollector
 
+	policyHelmCharts *PolicyHelmCharts
+
 	createSnapshotFn DockerSnapshotter
 }
 
@@ -141,6 +143,7 @@ type snapshot struct {
 	StackStatusArray map[portainer.EdgeStackID][]portainer.EdgeStackDeploymentStatus `json:"stackStatusArray,omitempty"`
 	JobsStatus       map[portainer.EdgeJobID]agent.EdgeJobStatus                     `json:"jobsStatus,omitempty"`
 	EdgeConfigStates map[EdgeConfigID]EdgeConfigStateType                            `json:"edgeConfigStates,omitempty"`
+	PolicyStatus     map[string][]portainer.PolicyChartStatus                        `json:"policyStatus,omitempty"`
 }
 
 type AsyncResponse struct {
@@ -493,13 +496,37 @@ func (client *PortainerAsyncClient) EnqueueLogCollectionForStack(logCmd LogComma
 	client.stackLogCollectionQueue = append(client.stackLogCollectionQueue, logCmd)
 }
 
+func (client *PortainerAsyncClient) SetChartsResponse(chart *PolicyHelmCharts) {
+	client.nextSnapshotMutex.Lock()
+	defer client.nextSnapshotMutex.Unlock()
+
+	client.policyHelmCharts = chart
+}
+
 // GetCharts retrieves the chart contents for the specified charts from the Portainer server
 func (client *PortainerAsyncClient) GetCharts(chartNames []string) ([]portainer.PolicyChartBundle, portainer.RestoreSettingsBundle, error) {
-	// TODO: Implement async client support for GetCharts
-	return []portainer.PolicyChartBundle{}, portainer.RestoreSettingsBundle{}, nil
+	client.nextSnapshotMutex.Lock()
+	defer client.nextSnapshotMutex.Unlock()
+
+	if client.policyHelmCharts == nil {
+		return nil, nil, errors.New("BUG: policyHelmCharts is nil, this should never happen")
+	}
+
+	return client.policyHelmCharts.PolicyChartBundles, client.policyHelmCharts.RestoreSettingsBundle, nil
 }
+
 func (client *PortainerAsyncClient) UpdatePolicyChartStatuses(statuses []portainer.PolicyChartStatus) error {
-	// TODO: Implement async client support for UpdatePolicyChartStatuses
+	client.nextSnapshotMutex.Lock()
+	defer client.nextSnapshotMutex.Unlock()
+
+	if client.nextSnapshot.PolicyStatus == nil {
+		client.nextSnapshot.PolicyStatus = make(map[string][]portainer.PolicyChartStatus)
+	}
+
+	for _, status := range statuses {
+		client.nextSnapshot.PolicyStatus[status.ChartName] = append(client.nextSnapshot.PolicyStatus[status.ChartName], status)
+	}
+
 	return nil
 }
 
