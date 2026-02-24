@@ -36,6 +36,7 @@ func (d *HelmDeployer) Deploy(ctx context.Context, name string, filePaths []stri
 		Str("context", "HelmDeployer").
 		Str("release_name", name).
 		Str("namespace", deployOpts.Namespace).
+		Str("working_dir", deployOpts.WorkingDir).
 		Msg("deploying Helm chart")
 
 	// Parse Helm configuration from deployOpts

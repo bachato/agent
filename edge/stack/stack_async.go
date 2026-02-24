@@ -103,10 +103,10 @@ func (manager *StackManager) buildDeployerParams(stackPayload edge.StackPayload,
 	stack.AlwaysCloneGitRepoForRelativePath = stackPayload.AlwaysCloneGitRepoForRelativePath
 	stack.FilesystemPath = stackPayload.FilesystemPath
 	stack.FileName = stackPayload.EntryFileName
-	stack.FileFolder = getStackFileFolder(stack)
 	stack.Namespace = stackPayload.Namespace
 	stack.EdgeUpdateID = stackPayload.EdgeUpdateID
 	stack.HelmConfig = stackPayload.HelmConfig
+	stack.FileFolder = getStackFileFolder(stack)
 
 	// When to force recreate the stack
 	// 1. When the stack is updated by GitOps with the ForceUpdate flag set to true
@@ -120,8 +120,12 @@ func (manager *StackManager) buildDeployerParams(stackPayload edge.StackPayload,
 		return err
 	}
 
-	log.Debug().Str("entry_file_name", stackPayload.EntryFileName).Str("helm_chart_path", stack.HelmConfig.ChartPath).Msg("adding registry credentials to stack entry file if needed")
 	if !IsHelmDeploymentStack(stack) {
+		log.Debug().
+			Str("entry_file_name", stackPayload.EntryFileName).
+			Str("file_folder", stack.FileFolder).
+			Msg("adding registry credentials to stack entry file if needed")
+
 		if err := manager.addRegistryToEntryFile(&stackPayload); err != nil {
 			return err
 		}

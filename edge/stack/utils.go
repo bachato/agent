@@ -31,6 +31,10 @@ func backupSuccessStack(stack *edgeStack) error {
 func getStackFileFolder(stack *edgeStack) string {
 	stackIDStr := strconv.Itoa(stack.ID)
 
+	if IsHelmDeploymentStack(stack) {
+		return filepath.Join(agent.EdgeStackFilesPath, stackIDStr)
+	}
+
 	folder := filepath.Join(agent.EdgeStackFilesPath, stackIDStr)
 	if stack.EdgeUpdateID != 0 {
 		folder = filepath.Join(agent.UpdateEdgeStackFilesPath, stackIDStr)

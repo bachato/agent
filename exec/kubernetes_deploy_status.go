@@ -21,7 +21,6 @@ import (
 )
 
 func (service *KubernetesDeployer) WaitForStatus(ctx context.Context, name string, requiredStatus libstack.Status, options deployer.CheckStatusOptions) libstack.WaitResult {
-
 	// Check if this is a Helm deployment BEFORE trying to access the stack file
 	// Helm deployments don't use manifest files, so we delegate to HelmDeployer immediately
 	if isHelmDeployment(options.Env) {

@@ -146,12 +146,12 @@ func (manager *StackManager) processStack(stackID int, stackStatus client.StackS
 	stack.AlwaysCloneGitRepoForRelativePath = stackPayload.AlwaysCloneGitRepoForRelativePath
 	stack.FilesystemPath = stackPayload.FilesystemPath
 	stack.FileName = stackPayload.EntryFileName
-	stack.FileFolder = getStackFileFolder(stack)
 	stack.RollbackTo = stackPayload.RollbackTo
 	stack.EdgeUpdateID = stackPayload.EdgeUpdateID
 	stack.CreatedBy = stackPayload.CreatedBy
 	stack.CreatedByUserId = stackPayload.CreatedByUserId
 	stack.HelmConfig = stackPayload.HelmConfig
+	stack.FileFolder = getStackFileFolder(stack)
 
 	// When to force recreate the stack
 	// 1. When the stack is updated by GitOps with the ForceUpdate flag set to true
@@ -163,8 +163,12 @@ func (manager *StackManager) processStack(stackID int, stackStatus client.StackS
 		return err
 	}
 
-	log.Debug().Str("entry_file_name", stackPayload.EntryFileName).Str("helm_chart_path", stack.HelmConfig.ChartPath).Msg("adding registry credentials to stack entry file if needed")
 	if !IsHelmDeploymentStack(stack) {
+		log.Debug().
+			Str("entry_file_name", stackPayload.EntryFileName).
+			Str("file_folder", stack.FileFolder).
+			Msg("adding registry credentials to stack entry file if needed")
+
 		if err := manager.addRegistryToEntryFile(stackPayload); err != nil {
 			return err
 		}
@@ -284,7 +288,7 @@ func (manager *StackManager) performActionOnStack() {
 		// this process, so changes to the bind source may not be reflected in the container.
 		// Therefore, this operation should only be performed if the stack is new
 		// or the AlwaysCloneGitRepoForRelativePath flag is set to true.
-		if IsRelativePathStack(stack) && (stack.Action == actionDeploy || stack.AlwaysCloneGitRepoForRelativePath) {
+		if !IsHelmDeploymentStack(stack) && IsRelativePathStack(stack) && (stack.Action == actionDeploy || stack.AlwaysCloneGitRepoForRelativePath) {
 			dst := filepath.Join(stack.FilesystemPath, agent.ComposePathPrefix)
 
 			if err := docker.CopyGitStackToHost(stack.FileFolder, dst, stack.ID, stackName, manager.assetsPath); err != nil {
@@ -695,7 +699,7 @@ func (manager *StackManager) cleanupStack(stack *edgeStack, stackName string) {
 	}
 
 	// Remove git folder
-	if IsRelativePathStack(stack) {
+	if !IsHelmDeploymentStack(stack) && IsRelativePathStack(stack) {
 		dst := filepath.Join(stack.FilesystemPath, agent.ComposePathPrefix)
 
 		if err := docker.RemoveGitStackFromHost(stack.FileFolder, dst, stack.ID, stackName); err != nil {
