@@ -17,6 +17,7 @@ import (
 	client "github.com/portainer/agent/edge/client"
 	portainer "github.com/portainer/portainer/api"
 	edge "github.com/portainer/portainer/api/edge"
+	metrics "github.com/portainer/portainer/pkg/metrics"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -134,6 +135,20 @@ func (m *MockPortainerClient) GetEnvironmentStatus(flags ...string) (*client.Pol
 func (mr *MockPortainerClientMockRecorder) GetEnvironmentStatus(flags ...any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetEnvironmentStatus", reflect.TypeOf((*MockPortainerClient)(nil).GetEnvironmentStatus), flags...)
+}
+
+// PostEdgeAlerts mocks base method.
+func (m *MockPortainerClient) PostEdgeAlerts(endpointID portainer.EndpointID, payload metrics.EdgeAlertBatch) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PostEdgeAlerts", endpointID, payload)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// PostEdgeAlerts indicates an expected call of PostEdgeAlerts.
+func (mr *MockPortainerClientMockRecorder) PostEdgeAlerts(endpointID, payload any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PostEdgeAlerts", reflect.TypeOf((*MockPortainerClient)(nil).PostEdgeAlerts), endpointID, payload)
 }
 
 // SetEdgeConfigState mocks base method.

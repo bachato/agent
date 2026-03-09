@@ -14,6 +14,7 @@ import (
 	"github.com/portainer/agent"
 	portainer "github.com/portainer/portainer/api"
 	"github.com/portainer/portainer/api/edge"
+	pkgmetrics "github.com/portainer/portainer/pkg/metrics"
 
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/pkg/errors"
@@ -496,6 +497,41 @@ func (client *PortainerEdgeClient) SetEdgeConfigState(id EdgeConfigID, state Edg
 		log.Error().Int("edge_config_id", int(id)).Stringer("state", state).Int("response_code", resp.StatusCode).Msg("SetEdgeConfigState operation failed")
 
 		return errors.New("SetEdgeConfigState operation failed")
+	}
+
+	return nil
+}
+
+// PostEdgeAlerts sends a batch of alerts and raw signals to the Portainer server.
+func (client *PortainerEdgeClient) PostEdgeAlerts(endpointID portainer.EndpointID, payload pkgmetrics.EdgeAlertBatch) error {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	requestURL := fmt.Sprintf("%s/api/endpoints/%d/edge/alerts", client.serverAddress, endpointID)
+
+	req, err := http.NewRequest(http.MethodPost, requestURL, bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set(agent.HTTPEdgeIdentifierHeaderName, client.edgeID)
+
+	resp, err := client.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+
+	_, _ = io.Copy(io.Discard, resp.Body)
+	if err := resp.Body.Close(); err != nil {
+		return fmt.Errorf("failed to close response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusNoContent {
+		log.Error().Int("response_code", resp.StatusCode).Msg("PostEdgeAlerts operation failed")
+
+		return errors.New("PostEdgeAlerts operation failed")
 	}
 
 	return nil

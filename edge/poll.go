@@ -14,6 +14,7 @@ import (
 	"github.com/portainer/agent/edge/policies"
 	"github.com/portainer/agent/edge/scheduler"
 	"github.com/portainer/agent/edge/stack"
+	"github.com/portainer/agent/kubernetes"
 	"github.com/portainer/portainer/pkg/libcrypto"
 	"github.com/portainer/portainer/pkg/librand"
 	pkgmetrics "github.com/portainer/portainer/pkg/metrics"
@@ -23,8 +24,12 @@ import (
 
 const (
 	tunnelActivityCheckInterval = 30 * time.Second
+	// TODO: metricCollectionInterval should be made configurable via a CLI flag
+	metricCollectionInterval    = 60 * time.Second
 	globalKeyInUse              = 0
 )
+
+var collectPerformanceMetricsFn = kubernetes.CollectPerformanceMetrics
 
 // PollService is used to poll a Portainer instance to retrieve the status associated to the Edge endpoint.
 // It is responsible for managing the state of the reverse tunnel (open and closing after inactivity).
@@ -43,6 +48,7 @@ type PollService struct {
 	updateLastActivitySignal chan struct{}
 	startSignal              chan struct{}
 	stopSignal               chan struct{}
+	metricPushCancel         context.CancelFunc
 	edgeManager              *Manager
 	edgeStackManager         *stack.StackManager
 	portainerURL             string
@@ -52,13 +58,14 @@ type PollService struct {
 	firstPoll                bool
 	alertRules               []pkgmetrics.EdgeAlertRule
 	// Async mode only
-	pingInterval     time.Duration
-	snapshotInterval time.Duration
-	commandInterval  time.Duration
-	pingTicker       *time.Ticker
-	snapshotTicker   *time.Ticker
-	commandTicker    *time.Ticker
-	policies         map[string]string // Name -> Fingerprint
+	pingInterval               time.Duration
+	snapshotInterval           time.Duration
+	commandInterval            time.Duration
+	pingTicker                 *time.Ticker
+	snapshotTicker             *time.Ticker
+	commandTicker              *time.Ticker
+	policies                   map[string]string // Name -> Fingerprint
+	prevNetworkCumulativeBytes uint64
 }
 
 type pollServiceConfig struct {
@@ -126,6 +133,12 @@ func newPollService(edgeManager *Manager, edgeStackManager *stack.StackManager, 
 
 		go pollService.startStatusPollLoop()
 		go pollService.startActivityMonitoringLoop()
+
+		if config.ContainerPlatform == agent.PlatformKubernetes && edgeManager.kubeClient != nil {
+			ctx, cancel := context.WithCancel(context.Background())
+			pollService.metricPushCancel = cancel
+			go pollService.startMetricPushLoop(ctx)
+		}
 	}
 
 	return pollService, nil
@@ -143,6 +156,9 @@ func (service *PollService) Start() {
 
 func (service *PollService) Stop() {
 	service.stopSignal <- struct{}{}
+	if service.metricPushCancel != nil {
+		service.metricPushCancel()
+	}
 }
 
 func (service *PollService) startStatusPollLoop() {
@@ -422,4 +438,50 @@ func (service *PollService) processEdgeConfigs(edgeConfigs map[client.EdgeConfig
 			service.processEdgeConfig(service.edgeManager.UpdateEdgeConfig, id)
 		}
 	}
+}
+
+// startMetricPushLoop runs a background loop that collects Kubernetes performance
+// metrics and evaluates alert rules on each tick. It exits when ctx is cancelled.
+func (service *PollService) startMetricPushLoop(ctx context.Context) {
+	ticker := time.NewTicker(metricCollectionInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			service.pushPerformanceMetrics(ctx)
+		}
+	}
+}
+
+// pushPerformanceMetrics collects cluster performance metrics from the Kubernetes API,
+// converts the raw cumulative network counters to a per-interval delta, and forwards
+// the result for alert rule evaluation.
+func (service *PollService) pushPerformanceMetrics(ctx context.Context) {
+	metrics, err := collectPerformanceMetricsFn(ctx, service.edgeManager.kubeClient)
+	if err != nil {
+		log.Debug().Err(err).Msg("failed to collect K8s performance metrics")
+		return
+	}
+
+	if metrics != nil && metrics.NetworkUsage > 0 {
+		current := uint64(metrics.NetworkUsage)
+		if service.prevNetworkCumulativeBytes == 0 {
+			// First tick: establish baseline; no delta available yet.
+			service.prevNetworkCumulativeBytes = current
+			metrics.NetworkUsage = 0
+		} else if current >= service.prevNetworkCumulativeBytes {
+			metrics.NetworkUsage = float64(current - service.prevNetworkCumulativeBytes)
+			service.prevNetworkCumulativeBytes = current
+		} else {
+			// Counter reset (kubelet restart): new baseline, skip this tick.
+			service.prevNetworkCumulativeBytes = current
+			metrics.NetworkUsage = 0
+		}
+	}
+
+	// TODO: evaluate rules and push fired alerts once rules are available
+	_ = metrics
 }

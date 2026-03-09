@@ -20,6 +20,7 @@ import (
 	aos "github.com/portainer/agent/os"
 	portainer "github.com/portainer/portainer/api"
 	"github.com/portainer/portainer/api/edge"
+	pkgmetrics "github.com/portainer/portainer/pkg/metrics"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -532,6 +533,11 @@ func (client *PortainerAsyncClient) UpdatePolicyChartStatuses(statuses []portain
 		client.nextSnapshot.PolicyStatus[status.ChartName] = append(client.nextSnapshot.PolicyStatus[status.ChartName], status)
 	}
 
+	return nil
+}
+
+// PostEdgeAlerts is not yet supported for async Edge environments.
+func (client *PortainerAsyncClient) PostEdgeAlerts(_ portainer.EndpointID, _ pkgmetrics.EdgeAlertBatch) error {
 	return nil
 }
 

@@ -32,6 +32,7 @@ type PortainerClient interface {
 	EnqueueLogCollectionForStack(logCmd LogCommandData)
 	GetCharts(chartNames []string) ([]portainer.PolicyChartBundle, portainer.RestoreSettingsBundle, error)
 	UpdatePolicyChartStatuses(statuses []portainer.PolicyChartStatus) error
+	PostEdgeAlerts(endpointID portainer.EndpointID, payload pkgmetrics.EdgeAlertBatch) error
 }
 
 type EdgeConfigID int

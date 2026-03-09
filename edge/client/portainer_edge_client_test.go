@@ -1,6 +1,7 @@
 package client
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -13,7 +14,9 @@ import (
 	"github.com/portainer/agent"
 	portainer "github.com/portainer/portainer/api"
 	"github.com/portainer/portainer/pkg/fips"
+	pkgmetrics "github.com/portainer/portainer/pkg/metrics"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -190,6 +193,59 @@ func TestUpdatePolicyChartStatuses_DoesNotRetryOnClientError(t *testing.T) {
 	err := client.UpdatePolicyChartStatuses([]portainer.PolicyChartStatus{{ChartName: "gatekeeper"}})
 	require.Error(t, err)
 	require.Equal(t, int32(1), atomic.LoadInt32(&requests))
+}
+
+func TestPostEdgeAlerts_SendsExpectedRequest(t *testing.T) {
+	fips.InitFIPS(false)
+
+	var received pkgmetrics.EdgeAlertBatch
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodPost, r.Method)
+		require.Equal(t, "/api/endpoints/12/edge/alerts", r.URL.Path)
+		require.Equal(t, "edge-id", r.Header.Get(agent.HTTPEdgeIdentifierHeaderName))
+		require.Equal(t, "application/json", r.Header.Get("Content-Type"))
+
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&received))
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	client := &PortainerEdgeClient{
+		edgeID:        "edge-id",
+		httpClient:    BuildHTTPClient(30, &agent.Options{}),
+		serverAddress: srv.URL,
+	}
+
+	err := client.PostEdgeAlerts(12, pkgmetrics.EdgeAlertBatch{
+		FiredAlerts: []pkgmetrics.FiredAlert{
+			{RuleID: 1, Severity: "warning", Message: "test alert"},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, received.FiredAlerts, 1)
+	assert.Equal(t, 1, received.FiredAlerts[0].RuleID)
+	assert.Equal(t, "warning", received.FiredAlerts[0].Severity)
+	assert.Equal(t, "test alert", received.FiredAlerts[0].Message)
+}
+
+func TestPostEdgeAlerts_ReturnsErrorOnNonNoContentResponse(t *testing.T) {
+	fips.InitFIPS(false)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer srv.Close()
+
+	client := &PortainerEdgeClient{
+		edgeID:        "edge-id",
+		httpClient:    BuildHTTPClient(30, &agent.Options{}),
+		serverAddress: srv.URL,
+	}
+
+	err := client.PostEdgeAlerts(99, pkgmetrics.EdgeAlertBatch{})
+	require.Error(t, err)
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
