@@ -6,6 +6,7 @@ import (
 	portainer "github.com/portainer/portainer/api"
 	"github.com/portainer/portainer/api/edge"
 	"github.com/portainer/portainer/api/filesystem"
+	pkgmetrics "github.com/portainer/portainer/pkg/metrics"
 
 	"github.com/portainer/agent"
 )
@@ -71,6 +72,7 @@ type PollStatusResponse struct {
 	Stacks               []StackStatus                        `json:"stacks"`
 	EdgeConfigurations   map[EdgeConfigID]EdgeConfigStateType `json:"edge_configurations"`
 	PolicyChartSummaries []portainer.PolicyChartSummary       `json:"policy_chart_summaries"`
+	AlertRules           []pkgmetrics.EdgeAlertRule           `json:"alert_rules"`
 
 	// Async mode only
 	EndpointID       int            `json:"endpointID"`

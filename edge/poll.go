@@ -16,6 +16,7 @@ import (
 	"github.com/portainer/agent/edge/stack"
 	"github.com/portainer/portainer/pkg/libcrypto"
 	"github.com/portainer/portainer/pkg/librand"
+	pkgmetrics "github.com/portainer/portainer/pkg/metrics"
 
 	"github.com/rs/zerolog/log"
 )
@@ -49,6 +50,7 @@ type PollService struct {
 	tunnelServerFingerprint  string
 	tunnelProxy              string
 	firstPoll                bool
+	alertRules               []pkgmetrics.EdgeAlertRule
 	// Async mode only
 	pingInterval     time.Duration
 	snapshotInterval time.Duration
@@ -280,6 +282,8 @@ func (service *PollService) poll() error {
 		// Process helm charts in background to avoid blocking the poll loop
 		go service.policyManager.ProcessPolicyHelmCharts(environmentStatus.PolicyChartSummaries)
 	}
+
+	service.alertRules = environmentStatus.AlertRules
 
 	return service.processStacks(environmentStatus.Stacks)
 }
