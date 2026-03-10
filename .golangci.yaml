@@ -53,6 +53,8 @@ linters:
               desc: use go.yaml.in/yaml/v3 instead
             - pkg: gopkg.in/yaml.v3
               desc: use go.yaml.in/yaml/v3 instead
+            - pkg: github.com/mitchellh/mapstructure
+              desc: use github.com/go-viper/mapstructure/v2 instead
             - pkg: gopkg.in/alecthomas/kingpin.v2
               desc: use github.com/alecthomas/kingpin/v2 instead
             - pkg: github.com/jcmturner/gokrb5$
