@@ -618,6 +618,7 @@ func (manager *StackManager) deployStack(ctx context.Context, stack *edgeStack, 
 		// cause a normal retry
 		log.Error().Err(err).Msg("unable to ensure registry credentials")
 	} else {
+		appLabels := buildK8sAppLabels(stack)
 		err = manager.deployer.Deploy(ctx, stackName, []string{stackFileLocation},
 			deployer.DeployOptions{
 				DeployerBaseOptions: deployer.DeployerBaseOptions{
@@ -629,6 +630,7 @@ func (manager *StackManager) deployStack(ctx context.Context, stack *edgeStack, 
 				EdgeStackID:   portainer.EdgeStackID(stack.ID),
 				Prune:         stack.DeployerOptionsPayload.Prune,
 				ForceRecreate: stack.DeployerOptionsPayload.ForceRecreate,
+				HelmAppLabels: appLabels.ToMap(),
 			},
 		)
 	}

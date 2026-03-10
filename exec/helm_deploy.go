@@ -113,6 +113,7 @@ func (d *HelmDeployer) Deploy(ctx context.Context, name string, filePaths []stri
 		CreateNamespace:         true,
 		Atomic:                  helmConfig.Atomic,
 		KubernetesClusterAccess: d.getKubeAccess(),
+		HelmAppLabels:           deployOpts.HelmAppLabels,
 	}
 
 	// Use helm upgrade --install pattern (idempotent)

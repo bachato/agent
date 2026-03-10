@@ -36,6 +36,7 @@ type (
 		Prune         bool
 		EdgeStackID   portainer.EdgeStackID
 		ForceRecreate bool
+		HelmAppLabels map[string]string
 	}
 
 	RemoveOptions struct {

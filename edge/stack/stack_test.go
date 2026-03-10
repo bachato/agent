@@ -153,6 +153,7 @@ func TestStackManager_deployStack(t *testing.T) {
 
 		stackName := "my-stack"
 		stackFileLocation := "/path/to/stack/stack.yml"
+		appLabels := buildK8sAppLabels(stack)
 
 		mockPortainerClient.EXPECT().SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusDeploying, stack.RollbackTo, "").Return(nil)
 		mockDeployer.EXPECT().Deploy(ctx, stackName, []string{stackFileLocation}, deployer.DeployOptions{
@@ -162,6 +163,7 @@ func TestStackManager_deployStack(t *testing.T) {
 				WorkingDir: stack.FileFolder,
 				Env:        buildEnvVarsForDeployer(stack.EnvVars),
 			},
+			HelmAppLabels: appLabels.ToMap(),
 		}).Return(nil)
 		mockPortainerClient.EXPECT().SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusDeploymentReceived, stack.RollbackTo, "").Return(nil)
 
@@ -190,6 +192,7 @@ func TestStackManager_deployStack(t *testing.T) {
 
 		stackName := "my-stack"
 		stackFileLocation := "/path/to/stack/stack.yml"
+		appLabels := buildK8sAppLabels(stack)
 
 		mockPortainerClient.EXPECT().SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusDeploying, stack.RollbackTo, "").Return(nil)
 		mockDeployer.EXPECT().Deploy(ctx, stackName, []string{stackFileLocation}, deployer.DeployOptions{
@@ -199,6 +202,7 @@ func TestStackManager_deployStack(t *testing.T) {
 				WorkingDir: stack.FileFolder,
 				Env:        buildEnvVarsForDeployer(stack.EnvVars),
 			},
+			HelmAppLabels: appLabels.ToMap(),
 		}).Return(errors.New("deploy failed"))
 
 		manager.deployStack(ctx, stack, stackName, stackFileLocation)
@@ -226,6 +230,7 @@ func TestStackManager_deployStack(t *testing.T) {
 
 		stackName := "my-stack"
 		stackFileLocation := "/path/to/stack/stack.yml"
+		appLabels := buildK8sAppLabels(stack)
 
 		mockPortainerClient.EXPECT().SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusDeploying, stack.RollbackTo, "").Return(nil)
 		mockDeployer.EXPECT().Deploy(ctx, stackName, []string{stackFileLocation}, deployer.DeployOptions{
@@ -235,6 +240,7 @@ func TestStackManager_deployStack(t *testing.T) {
 				WorkingDir: stack.FileFolder,
 				Env:        buildEnvVarsForDeployer(stack.EnvVars),
 			},
+			HelmAppLabels: appLabels.ToMap(),
 		}).Return(errors.New("deploy failed"))
 		mockPortainerClient.EXPECT().SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusError, stack.RollbackTo, "failed to redeploy stack: deploy failed").Return(nil)
 

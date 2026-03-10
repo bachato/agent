@@ -63,16 +63,27 @@ func applyK8sLabelsToManifest(
 	return nil
 }
 
-// shouldApplyK8sLabels returns true if K8s labels should be applied to this stack
-func (manager *StackManager) shouldApplyK8sLabels() bool {
-	return manager.engineType == EngineTypeKubernetes
+// buildK8sAppLabels returns the Portainer app label map for the given edge stack.
+func buildK8sAppLabels(stack *edgeStack) kubernetes.KubeAppLabels {
+	return kubernetes.KubeAppLabels{
+		StackID:   stack.ID,
+		StackName: stack.Name,
+		Owner:     stack.CreatedBy,
+		OwnerId:   stack.CreatedByUserId,
+		StackKind: "edge",
+	}
 }
 
-// applyK8sLabelsIfNeeded applies Kubernetes labels to the manifest if this is a Kubernetes stack.
+// shouldApplyK8sLabels returns true if K8s labels should be applied to this stack
+func (manager *StackManager) shouldApplyK8sLabels(stack *edgeStack) bool {
+	return manager.engineType == EngineTypeKubernetes && !IsHelmDeploymentStack(stack)
+}
+
+// applyK8sLabelsIfNeeded applies Kubernetes labels to the manifest if this is a Kubernetes stack. It modifies the dirEntries in-place by updating the manifest file content with labels. This doesn't apply to Helm stack.
 // It checks the deployment type and only applies labels for Kubernetes edge stacks.
 func (manager *StackManager) applyK8sLabelsIfNeeded(stack *edgeStack, dirEntries []filesystem.DirEntry) error {
 	// Only apply labels for Kubernetes stacks
-	if !manager.shouldApplyK8sLabels() {
+	if !manager.shouldApplyK8sLabels(stack) {
 		return nil
 	}
 
@@ -80,13 +91,7 @@ func (manager *StackManager) applyK8sLabelsIfNeeded(stack *edgeStack, dirEntries
 		Str("stack_folder_name", stack.FileFolder).Msg("applying k8s labels to edge stack manifest")
 
 	// Create the label map
-	labels := kubernetes.KubeAppLabels{
-		StackID:   stack.ID,
-		StackName: stack.Name,
-		Owner:     stack.CreatedBy,
-		OwnerId:   stack.CreatedByUserId,
-		StackKind: "edge",
-	}
+	labels := buildK8sAppLabels(stack)
 
 	// Deployment type check is done via engineType in StackManager
 	// which is set based on portainer.EdgeStackDeploymentKubernetes
