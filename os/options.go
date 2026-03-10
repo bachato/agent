@@ -7,7 +7,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/portainer/agent"
 
-	kingpin "gopkg.in/alecthomas/kingpin.v2"
+	"github.com/alecthomas/kingpin/v2"
 )
 
 const (

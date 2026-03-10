@@ -6,6 +6,7 @@ replace github.com/portainer/portainer => ../server-ce
 
 require (
 	github.com/Microsoft/go-winio v0.6.2
+	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/aws/aws-sdk-go-v2 v1.30.3
 	github.com/aws/aws-sdk-go-v2/config v1.27.27
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.27
@@ -33,7 +34,6 @@ require (
 	github.com/wI2L/jsondiff v0.7.0
 	go.uber.org/mock v0.6.0
 	go.yaml.in/yaml/v3 v3.0.4
-	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	k8s.io/api v0.33.3
 	k8s.io/apimachinery v0.33.4
 	k8s.io/client-go v0.33.3
@@ -54,7 +54,6 @@ require (
 	github.com/RoaringBitmap/roaring/v2 v2.5.0 // indirect
 	github.com/StackExchange/wmi v1.2.1 // indirect
 	github.com/acarl005/stripansi v0.0.0-20180116102854-5a71ef0e047d // indirect
-	github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751 // indirect
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137 // indirect
 	github.com/apparentlymart/go-textseg/v15 v15.0.0 // indirect
 	github.com/armon/go-metrics v0.0.0-20190430140413-ec5e00d3c878 // indirect
