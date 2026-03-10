@@ -19,7 +19,7 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.4.0
 	github.com/gorilla/mux v1.8.1
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
-	github.com/hashicorp/golang-lru v0.5.4
+	github.com/hashicorp/golang-lru v1.0.2
 	github.com/hashicorp/logutils v1.0.0
 	github.com/hashicorp/serf v0.8.3
 	github.com/jaypipes/ghw v0.9.0
