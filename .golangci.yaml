@@ -53,6 +53,8 @@ linters:
               desc: use go.yaml.in/yaml/v3 instead
             - pkg: gopkg.in/yaml.v3
               desc: use go.yaml.in/yaml/v3 instead
+            - pkg: github.com/jcmturner/gokrb5$
+              desc: use github.com/jcmturner/gokrb5/v8 instead
             - pkg: github.com/gofrs/uuid
               desc: use github.com/google/uuid
             - pkg: github.com/Masterminds/semver$
