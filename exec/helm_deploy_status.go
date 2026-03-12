@@ -81,7 +81,7 @@ func (d *HelmDeployer) WaitForStatus(ctx context.Context, name string, requiredS
 }
 
 // mapHelmStatusToLibstack maps Helm release status to libstack status
-// Helm status values from helm.sh/helm/v3/pkg/release:
+// Helm status values from helm.sh/helm/v4/pkg/release/common:
 // - deployed: successfully deployed
 // - failed: deployment/upgrade failed
 // - pending-install: installation in progress
@@ -91,7 +91,7 @@ func (d *HelmDeployer) WaitForStatus(ctx context.Context, name string, requiredS
 // - uninstalled: successfully uninstalled
 // - superseded: replaced by a newer release
 func (d *HelmDeployer) mapHelmStatusToLibstack(helmStatus release.Status) libstack.Status {
-	// Helm status constants from helm.sh/helm/v3/pkg/release
+	// Helm status constants from helm.sh/helm/v4/pkg/release/common
 	// Convert to string for comparison
 	statusStr := string(helmStatus)
 
