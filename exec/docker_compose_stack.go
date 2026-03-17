@@ -31,10 +31,11 @@ func NewDockerComposeStackService(binaryPath string) *DockerComposeStackService 
 func (service *DockerComposeStackService) Deploy(ctx context.Context, name string, filePaths []string, options deployer.DeployOptions) error {
 	return service.deployer.Deploy(ctx, filePaths, libstack.DeployOptions{
 		Options: libstack.Options{
-			ProjectName: name,
-			WorkingDir:  options.WorkingDir,
-			Env:         options.Env,
-			Registries:  registryCredsToAuthConfigs(options.Registries),
+			ProjectName:          name,
+			WorkingDir:           options.WorkingDir,
+			Env:                  options.Env,
+			Registries:           registryCredsToAuthConfigs(options.Registries),
+			BindMountHashEnabled: options.BindMountHashEnabled,
 		},
 		ForceRecreate: options.ForceRecreate,
 		RemoveOrphans: options.Prune,

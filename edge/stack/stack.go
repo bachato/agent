@@ -144,6 +144,7 @@ func (manager *StackManager) processStack(stackID int, stackStatus client.StackS
 	stack.ForceUpdate = stackPayload.ForceUpdate
 	stack.SupportRelativePath = stackPayload.SupportRelativePath
 	stack.AlwaysCloneGitRepoForRelativePath = stackPayload.AlwaysCloneGitRepoForRelativePath
+	stack.SupportPerDeviceConfigs = stackPayload.SupportPerDeviceConfigs
 	stack.FilesystemPath = stackPayload.FilesystemPath
 	stack.FileName = stackPayload.EntryFileName
 	stack.RollbackTo = stackPayload.RollbackTo
@@ -594,8 +595,8 @@ func (manager *StackManager) deployStack(ctx context.Context, stack *edgeStack, 
 
 	log.Debug().
 		Int("stack_identifier", stack.ID).
-		Bool("RetryDeploy", stack.RetryDeploy).
-		Int("DeployCount", stack.DeployCount).
+		Bool("retry_deploy", stack.RetryDeploy).
+		Int("deploy_count", stack.DeployCount).
 		Str("stack_name", stackName).
 		Str("namespace", stack.Namespace).
 		Msg("stack deployment")
@@ -627,10 +628,11 @@ func (manager *StackManager) deployStack(ctx context.Context, stack *edgeStack, 
 					Env:        envVars,
 					Registries: regCreds,
 				},
-				EdgeStackID:   portainer.EdgeStackID(stack.ID),
-				Prune:         stack.DeployerOptionsPayload.Prune,
-				ForceRecreate: stack.DeployerOptionsPayload.ForceRecreate,
-				HelmAppLabels: appLabels.ToMap(),
+				EdgeStackID:          portainer.EdgeStackID(stack.ID),
+				Prune:                stack.DeployerOptionsPayload.Prune,
+				ForceRecreate:        stack.DeployerOptionsPayload.ForceRecreate,
+				HelmAppLabels:        appLabels.ToMap(),
+				BindMountHashEnabled: stack.SupportPerDeviceConfigs,
 			},
 		)
 	}

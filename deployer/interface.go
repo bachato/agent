@@ -37,6 +37,10 @@ type (
 		EdgeStackID   portainer.EdgeStackID
 		ForceRecreate bool
 		HelmAppLabels map[string]string
+		// BindMountHashEnabled controls whether bind mount hash labels are set for services.
+		// This option is used for Edge stacks that support per device configs to ensure that
+		// changes to bind mounts are detected and applied by the deployer.
+		BindMountHashEnabled bool
 	}
 
 	RemoveOptions struct {
