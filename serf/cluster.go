@@ -3,9 +3,11 @@ package serf
 import (
 	"fmt"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/portainer/agent"
+	agentnet "github.com/portainer/agent/net"
 
 	"github.com/hashicorp/logutils"
 	"github.com/hashicorp/serf/serf"
@@ -31,12 +33,24 @@ const (
 type ClusterService struct {
 	runtimeConfiguration *agent.RuntimeConfig
 	cluster              *serf.Serf
+	clusterAddr          string
+	rejoining            atomic.Bool
+	rejoinInterval       time.Duration // 0 defaults to 10s; override in tests for speed
 }
 
 // NewClusterService returns a pointer to a ClusterService.
 func NewClusterService(runtimeConfiguration *agent.RuntimeConfig) *ClusterService {
 	return &ClusterService{
 		runtimeConfiguration: runtimeConfiguration,
+	}
+}
+
+// NewSwarmClusterService returns a pointer to a ClusterService configured for Docker Swarm.
+// The clusterAddr is the DNS name used to re-resolve peers for self-healing rejoin after a manager reap.
+func NewSwarmClusterService(runtimeConfiguration *agent.RuntimeConfig, clusterAddr string) *ClusterService {
+	return &ClusterService{
+		runtimeConfiguration: runtimeConfiguration,
+		clusterAddr:          clusterAddr,
 	}
 }
 
@@ -47,7 +61,7 @@ func (service *ClusterService) Leave() {
 	}
 
 	if err := service.cluster.Leave(); err != nil {
-		log.Error().Err(err).Msg("failed to leave cluster")
+		log.Error().Str("context", "ClusterService").Err(err).Msg("Failed to leave cluster")
 	}
 }
 
@@ -67,6 +81,13 @@ func (service *ClusterService) Create(advertiseAddr string, joinAddr []string, p
 	conf.LogOutput = filter
 	conf.MemberlistConfig.AdvertiseAddr = advertiseAddr
 
+	// Only enable event watching on Swarm clusters where self-healing rejoin is needed.
+	var eventCh chan serf.Event
+	if service.clusterAddr != "" {
+		eventCh = make(chan serf.Event, 64)
+		conf.EventCh = eventCh
+	}
+
 	// These parameters should only be overridden if experiencing agent cluster instability
 	// Default memberlist values should work in most clustering use cases but some
 	// cluster/network topologies might cause the agent cluster to be unstable and
@@ -80,23 +101,119 @@ func (service *ClusterService) Create(advertiseAddr string, joinAddr []string, p
 	conf.ReconnectInterval = 10 * time.Second
 	conf.ReconnectTimeout = 1 * time.Minute
 
-	log.Debug().Str("advertise_address", advertiseAddr).Strs("join_address", joinAddr).Msg("")
+	log.Debug().
+		Str("context", "ClusterService").
+		Str("advertise_address", advertiseAddr).
+		Strs("join_address", joinAddr).
+		Msg("Creating cluster")
 
 	cluster, err := serf.Create(conf)
 	if err != nil {
 		return err
 	}
 
-	nodeCount, err := cluster.Join(joinAddr, true)
-	if err != nil {
-		log.Debug().Err(err).Msg("unable to join cluster")
-	}
-
-	log.Debug().Int("contacted_nodes", nodeCount).Msg("")
-
 	service.cluster = cluster
 
+	// Must be started before Join() so the goroutine drains EventMemberJoin events in real
+	// time — Serf sends to EventCh with a blocking send (no select/default).
+	if eventCh != nil {
+		go service.watchClusterEvents(eventCh)
+	}
+
+	nodeCount, err := cluster.Join(joinAddr, true)
+	if err != nil {
+		// Join failure is non-fatal: best-effort startup. When clusterAddr is set
+		// (Swarm), the self-healing rejoin loop will recover. Warn only when a
+		// join address was provided so operators can detect a degraded initial state.
+		if len(joinAddr) > 0 {
+			log.Warn().
+				Str("context", "ClusterService").
+				Strs("join_addr", joinAddr).
+				Err(err).
+				Msg("Initial cluster join failed; starting in degraded state")
+		}
+	}
+
+	log.Debug().
+		Str("context", "ClusterService").
+		Int("contacted_nodes", nodeCount).
+		Msg("Cluster join attempted")
+
 	return nil
+}
+
+// watchClusterEvents listens for Serf events and triggers a cluster rejoin
+// when a manager agent is reaped.
+func (service *ClusterService) watchClusterEvents(eventCh <-chan serf.Event) {
+	for event := range eventCh {
+		memberEvent, ok := event.(serf.MemberEvent)
+		if !ok || memberEvent.Type != serf.EventMemberReap {
+			continue
+		}
+
+		for _, member := range memberEvent.Members {
+			if member.Tags[memberTagKeyNodeRole] != memberTagValueNodeRoleManager {
+				continue
+			}
+
+			if service.rejoining.CompareAndSwap(false, true) {
+				log.Debug().
+					Str("context", "ClusterService").
+					Str("cluster_addr", service.clusterAddr).
+					Str("member", member.Name).
+					Msg("Manager agent reaped, starting rejoin loop")
+				go service.rejoinUntilManagerFound()
+			}
+			break
+		}
+	}
+}
+
+// rejoinUntilManagerFound periodically re-resolves the cluster DNS address and attempts
+// to join until a manager node appears in the Serf member list. This recovers from the
+// race between EventMemberReap and the new manager container registering in DNS.
+func (service *ClusterService) rejoinUntilManagerFound() {
+	defer service.rejoining.Store(false)
+
+	interval := service.rejoinInterval
+	if interval == 0 {
+		interval = 10 * time.Second
+	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		if service.GetMemberByRole(agent.NodeRoleManager) != nil {
+			return
+		}
+
+		addrs, err := agentnet.LookupIPAddresses(service.clusterAddr)
+		if err != nil || len(addrs) == 0 {
+			log.Debug().
+				Str("context", "ClusterService").
+				Str("cluster_addr", service.clusterAddr).
+				Err(err).
+				Msg("Cluster rejoin: DNS lookup returned no results")
+			continue
+		}
+
+		n, err := service.cluster.Join(addrs, true)
+		if err != nil || n == 0 {
+			log.Debug().
+				Str("context", "ClusterService").
+				Str("cluster_addr", service.clusterAddr).
+				Err(err).
+				Msg("Cluster rejoin: unable to contact peers")
+			continue
+		}
+
+		log.Debug().
+			Str("context", "ClusterService").
+			Str("cluster_addr", service.clusterAddr).
+			Int("contacted_nodes", n).
+			Msg("Cluster rejoin: join attempted")
+	}
 }
 
 // Members returns the list of cluster members.

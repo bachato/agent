@@ -123,8 +123,6 @@ func main() {
 		}
 
 		if containerPlatform == agent.PlatformDocker && clusterMode {
-			clusterService = cluster.NewClusterService(runtimeConfiguration)
-
 			clusterAddr := options.ClusterAddress
 			if clusterAddr == "" {
 				serviceName, err := dockerInfoService.GetServiceNameFromDockerEngine(containerName)
@@ -134,6 +132,8 @@ func main() {
 
 				clusterAddr = "tasks." + serviceName
 			}
+
+			clusterService = cluster.NewSwarmClusterService(runtimeConfiguration, clusterAddr)
 
 			// TODO: Workaround. looks like the Docker DNS cannot find any info on tasks.<service_name>
 			// sometimes... Waiting a bit before starting the discovery (at least 3 seconds) seems to solve the problem.
