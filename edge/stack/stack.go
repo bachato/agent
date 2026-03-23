@@ -386,7 +386,6 @@ func (manager *StackManager) checkStackStatus(ctx context.Context, stackName str
 		requiredStatus = libstack.StatusRemoved
 	case StatusAwaitingDeployedStatus:
 		requiredStatus = libstack.StatusRunning
-
 	case StatusDeployed:
 		if stack.EdgeUpdateID == 0 {
 			// There is no need to wait for a change of state, just observe if it
