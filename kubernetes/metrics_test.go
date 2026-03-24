@@ -2,6 +2,7 @@ package kubernetes
 
 import (
 	"errors"
+	"sync/atomic"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -72,9 +73,9 @@ func TestAggregateClusterPerformanceMetrics_DiskUsage(t *testing.T) {
 			makeNode("node2", 4000, 8*1024*1024*1024),
 		}
 
-		i := 0
+		var counter int64
 		collectFn := func(_ corev1.Node) (*nodePerformanceSample, error) {
-			i++
+			i := atomic.AddInt64(&counter, 1)
 			used := uint64(i) * 25 * 1024 * 1024 * 1024
 			return &nodePerformanceSample{
 				DiskUsedBytes:     used,

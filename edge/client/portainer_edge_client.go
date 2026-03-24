@@ -517,6 +517,7 @@ func (client *PortainerEdgeClient) PostEdgeAlerts(endpointID portainer.EndpointI
 	}
 
 	req.Header.Set(agent.HTTPEdgeIdentifierHeaderName, client.edgeID)
+	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := client.httpClient.Do(req)
 	if err != nil {
