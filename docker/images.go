@@ -2,11 +2,9 @@ package docker
 
 import (
 	"context"
-	"os"
 
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
-	"github.com/portainer/portainer/api/logs"
 )
 
 func ImageDelete(name string, opts image.RemoveOptions) (r []image.DeleteResponse, err error) {
@@ -17,17 +15,4 @@ func ImageDelete(name string, opts image.RemoveOptions) (r []image.DeleteRespons
 	})
 
 	return r, err
-}
-
-func ImageLoad(imagePath string) error {
-	return withCli(func(cli *client.Client) error {
-		file, err := os.Open(imagePath)
-		if err != nil {
-			return err
-		}
-		defer logs.CloseAndLogErr(file)
-
-		_, err = cli.ImageLoad(context.Background(), file)
-		return err
-	})
 }
