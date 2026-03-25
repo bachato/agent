@@ -51,7 +51,7 @@ func (handler *Handler) websocketPodExec(w http.ResponseWriter, r *http.Request)
 	stdoutReader, stdoutWriter := io.Pipe()
 	defer logs.CloseAndLogErr(stdoutWriter)
 
-	errorChan := make(chan error, 1)
+	errorChan := make(chan error, 2)
 	go ws.StreamFromWebsocketToWriter(websocketConn, stdinWriter, errorChan)
 	go ws.StreamFromReaderToWebsocket(websocketConn, stdoutReader, errorChan)
 
