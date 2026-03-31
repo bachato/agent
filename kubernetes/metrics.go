@@ -40,11 +40,108 @@ type nodePerformanceSample struct {
 	DiskUsedBytes         uint64
 	DiskCapacityBytes     uint64
 	HasDisk               bool
-	NetworkTotalBytes     uint64
+	NetworkRxBytes        uint64
+	NetworkTxBytes        uint64
 	HasNetwork            bool
 }
 
+// ClusterRawMetrics holds raw (non-percentage) cluster-wide resource usage and capacity.
+type ClusterRawMetrics struct {
+	CPUUsageNanoCores     uint64
+	CPUCapacityNanoCores  uint64
+	MemoryWorkingSetBytes uint64
+	MemoryCapacityBytes   uint64
+	DiskUsedBytes         uint64
+	DiskCapacityBytes     uint64
+	NetworkRxBytes        uint64
+	NetworkTxBytes        uint64
+	HasCPU, HasMemory, HasDisk, HasNetwork bool
+}
+
 var collectNodeMetricsFn = collectNodeMetrics
+
+type nodeResult struct {
+	node   string
+	sample *nodePerformanceSample
+	err    error
+}
+
+// fanOutNodeCollection queries all nodes concurrently using collectFn and returns
+// one result per node in the same order as the input slice.
+func fanOutNodeCollection(nodes []corev1.Node, collectFn func(corev1.Node) (*nodePerformanceSample, error)) []nodeResult {
+	results := make([]nodeResult, len(nodes))
+
+	var wg sync.WaitGroup
+	for i, node := range nodes {
+		wg.Go(func() {
+			sample, err := collectFn(node)
+			results[i] = nodeResult{node: node.Name, sample: sample, err: err}
+		})
+	}
+	wg.Wait()
+
+	return results
+}
+
+// CollectRawMetrics collects raw (non-percentage) CPU, memory, disk, and network values
+// by querying each node's kubelet stats/summary endpoint. Returns uint64 values suitable
+// for direct ingestion into a TSDB.
+func CollectRawMetrics(ctx context.Context, kc *KubeClient) (*ClusterRawMetrics, error) {
+	nodeList, err := kc.cli.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	results := fanOutNodeCollection(nodeList.Items, func(node corev1.Node) (*nodePerformanceSample, error) {
+		return collectNodeMetricsFn(ctx, kc, node)
+	})
+
+	raw := &ClusterRawMetrics{}
+	var successfulScrapes int
+
+	for _, r := range results {
+		if r.err != nil {
+			log.Warn().Err(r.err).Str("node", r.node).Msg("failed to collect node raw metrics")
+			continue
+		}
+
+		successfulScrapes++
+
+		if r.sample == nil {
+			continue
+		}
+
+		if r.sample.HasCPU {
+			raw.HasCPU = true
+			raw.CPUUsageNanoCores += r.sample.CPUUsageNanoCores
+			raw.CPUCapacityNanoCores += r.sample.CPUCapacityNanoCores
+		}
+
+		if r.sample.HasMemory {
+			raw.HasMemory = true
+			raw.MemoryWorkingSetBytes += r.sample.MemoryWorkingSetBytes
+			raw.MemoryCapacityBytes += r.sample.MemoryCapacityBytes
+		}
+
+		if r.sample.HasDisk {
+			raw.HasDisk = true
+			raw.DiskUsedBytes += r.sample.DiskUsedBytes
+			raw.DiskCapacityBytes += r.sample.DiskCapacityBytes
+		}
+
+		if r.sample.HasNetwork {
+			raw.HasNetwork = true
+			raw.NetworkRxBytes += r.sample.NetworkRxBytes
+			raw.NetworkTxBytes += r.sample.NetworkTxBytes
+		}
+	}
+
+	if successfulScrapes == 0 {
+		return nil, errors.New("failed to collect raw metrics from all nodes")
+	}
+
+	return raw, nil
+}
 
 // CollectPerformanceMetrics collects CPU, memory, disk, and network usage by querying
 // each node's kubelet stats/summary endpoint directly via the Kubernetes API proxy
@@ -68,22 +165,7 @@ func CollectPerformanceMetrics(ctx context.Context, kc *KubeClient) (*portainer.
 // Network is the cumulative lifetime byte total across all nodes (caller is responsible for delta conversion).
 // Returns nil metrics (without error) if all nodes scraped successfully but none reported usable data.
 func aggregateClusterPerformanceMetrics(nodes []corev1.Node, collectFn func(node corev1.Node) (*nodePerformanceSample, error)) (*portainer.PerformanceMetrics, error) {
-	type result struct {
-		node   string
-		sample *nodePerformanceSample
-		err    error
-	}
-
-	results := make([]result, len(nodes))
-
-	var wg sync.WaitGroup
-	for i, node := range nodes {
-		wg.Go(func() {
-			sample, err := collectFn(node)
-			results[i] = result{node: node.Name, sample: sample, err: err}
-		})
-	}
-	wg.Wait()
+	results := fanOutNodeCollection(nodes, collectFn)
 
 	totals := &portainer.PerformanceMetrics{}
 
@@ -92,7 +174,7 @@ func aggregateClusterPerformanceMetrics(nodes []corev1.Node, collectFn func(node
 	var totalCPUUsageNanoCores, totalCPUCapacityNanoCores uint64
 	var totalMemoryWorkingSetBytes, totalMemoryCapacityBytes uint64
 	var totalDiskUsedBytes, totalDiskCapacityBytes uint64
-	var totalNetworkBytes uint64
+	var totalNetworkRxBytes, totalNetworkTxBytes uint64
 
 	for _, r := range results {
 		if r.err != nil {
@@ -126,7 +208,8 @@ func aggregateClusterPerformanceMetrics(nodes []corev1.Node, collectFn func(node
 
 		if r.sample.HasNetwork {
 			hasAnyMetric = true
-			totalNetworkBytes += r.sample.NetworkTotalBytes
+			totalNetworkRxBytes += r.sample.NetworkRxBytes
+			totalNetworkTxBytes += r.sample.NetworkTxBytes
 		}
 	}
 
@@ -150,8 +233,8 @@ func aggregateClusterPerformanceMetrics(nodes []corev1.Node, collectFn func(node
 		totals.DiskUsage = math.Round(float64(totalDiskUsedBytes) / float64(totalDiskCapacityBytes) * 100)
 	}
 
-	if totalNetworkBytes > 0 {
-		totals.NetworkUsage = float64(totalNetworkBytes)
+	if totalNetworkRxBytes+totalNetworkTxBytes > 0 {
+		totals.NetworkUsage = float64(totalNetworkRxBytes + totalNetworkTxBytes)
 	}
 
 	return totals, nil
@@ -202,7 +285,8 @@ func collectNodeMetrics(ctx context.Context, kc *KubeClient, node corev1.Node) (
 	}
 
 	if stats.Node.Network != nil && stats.Node.Network.RxBytes != nil && stats.Node.Network.TxBytes != nil {
-		sample.NetworkTotalBytes = *stats.Node.Network.RxBytes + *stats.Node.Network.TxBytes
+		sample.NetworkRxBytes = *stats.Node.Network.RxBytes
+		sample.NetworkTxBytes = *stats.Node.Network.TxBytes
 		sample.HasNetwork = true
 	}
 

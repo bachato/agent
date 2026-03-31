@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"net"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 	"github.com/portainer/agent/http/handler/key"
 	"github.com/portainer/agent/http/handler/kubernetes"
 	"github.com/portainer/agent/http/handler/kubernetesproxy"
+	agentmetrics "github.com/portainer/agent/http/handler/metrics"
 	"github.com/portainer/agent/http/handler/ping"
 	"github.com/portainer/agent/http/handler/websocket"
 	"github.com/portainer/agent/http/proxy"
@@ -40,6 +42,7 @@ type Handler struct {
 	hostHandler            *host.Handler
 	pingHandler            *ping.Handler
 	diagnosticsHandler     *diagnostics.Handler
+	metricsHandler         *agentmetrics.Handler
 	containerPlatform      agent.ContainerPlatform
 }
 
@@ -72,6 +75,7 @@ func NewHandler(config *Config) *Handler {
 		dockerProxyHandler:     docker.NewHandler(config.ClusterService, config.RuntimeConfiguration, notaryService, config.UseTLS),
 		dockerhubHandler:       dockerhub.NewHandler(notaryService, config.PullLimitCheckDisabled),
 		diagnosticsHandler:     diagnostics.NewHandler(config.ContainerPlatform, config.EdgeManager, notaryService),
+		metricsHandler:         resolveMetricsHandler(config.EdgeManager),
 		keyHandler:             key.NewHandler(notaryService, config.EdgeManager),
 		kubernetesHandler:      kubernetes.NewHandler(notaryService, config.KubernetesDeployer),
 		kubernetesProxyHandler: kubernetesproxy.NewHandler(notaryService),
@@ -80,6 +84,22 @@ func NewHandler(config *Config) *Handler {
 		pingHandler:            ping.NewHandler(),
 		containerPlatform:      config.ContainerPlatform,
 	}
+}
+
+// resolveMetricsHandler returns the edge manager's shared metrics handler if available,
+// otherwise creates a standalone one for the /api/metrics endpoint.
+func resolveMetricsHandler(edgeManager *edge.Manager) *agentmetrics.Handler {
+	if edgeManager != nil {
+		if h := edgeManager.MetricsHandler(); h != nil {
+			return h
+		}
+	}
+	return agentmetrics.NewHandler()
+}
+
+// MetricsHandler returns the metrics handler for updating gauge values.
+func (h *Handler) MetricsHandler() *agentmetrics.Handler {
+	return h.metricsHandler
 }
 
 func (h *Handler) ServeHTTP(rw http.ResponseWriter, request *http.Request) {
@@ -107,6 +127,12 @@ func (h *Handler) ServeHTTP(rw http.ResponseWriter, request *http.Request) {
 		h.ServeHTTPV2(rw, request)
 	case strings.HasPrefix(request.URL.Path, "/ping"):
 		h.pingHandler.ServeHTTP(rw, request)
+	case strings.HasPrefix(request.URL.Path, "/api/metrics"):
+		if !isLocalRequest(request) {
+			http.Error(rw, "Forbidden", http.StatusForbidden)
+			return
+		}
+		h.metricsHandler.ServeHTTP(rw, request)
 	case strings.HasPrefix(request.URL.Path, "/diagnostics"):
 		h.diagnosticsHandler.ServeHTTP(rw, request)
 	case strings.HasPrefix(request.URL.Path, "/agents"):
@@ -122,4 +148,38 @@ func (h *Handler) ServeHTTP(rw http.ResponseWriter, request *http.Request) {
 	case strings.HasPrefix(request.URL.Path, "/"):
 		h.dockerProxyHandler.ServeHTTP(rw, request)
 	}
+}
+
+// isLocalRequest returns true when the request originates from the local host.
+// It accepts both loopback requests and self-dials to the listener's bound IP.
+func isLocalRequest(r *http.Request) bool {
+	remoteIP := parseRequestIP(r.RemoteAddr)
+	if remoteIP == nil {
+		return false
+	}
+
+	if remoteIP.IsLoopback() {
+		return true
+	}
+
+	localAddr, ok := r.Context().Value(http.LocalAddrContextKey).(net.Addr)
+	if !ok {
+		return false
+	}
+
+	localIP := parseRequestIP(localAddr.String())
+	if localIP == nil {
+		return false
+	}
+
+	return remoteIP.Equal(localIP)
+}
+
+func parseRequestIP(addr string) net.IP {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil
+	}
+
+	return net.ParseIP(host)
 }

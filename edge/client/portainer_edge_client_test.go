@@ -1,7 +1,6 @@
 package client
 
 import (
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -16,7 +15,6 @@ import (
 	"github.com/portainer/portainer/pkg/fips"
 	pkgmetrics "github.com/portainer/portainer/pkg/metrics"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -195,57 +193,70 @@ func TestUpdatePolicyChartStatuses_DoesNotRetryOnClientError(t *testing.T) {
 	require.Equal(t, int32(1), atomic.LoadInt32(&requests))
 }
 
-func TestPostEdgeAlerts_SendsExpectedRequest(t *testing.T) {
+func TestSetAlertStateCachesHeader(t *testing.T) {
 	fips.InitFIPS(false)
 
-	var received pkgmetrics.EdgeAlertBatch
+	httpClient := BuildHTTPClient(30, &agent.Options{})
+	httpClient.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		require.JSONEq(t, `{"rules":[{"rule_id":7,"state":"firing","last_evaluation":123}]}`, r.Header.Get(agent.HTTPAlertStateHeaderName))
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, http.MethodPost, r.Method)
-		require.Equal(t, "/api/endpoints/12/edge/alerts", r.URL.Path)
-		require.Equal(t, "edge-id", r.Header.Get(agent.HTTPEdgeIdentifierHeaderName))
-		require.Equal(t, "application/json", r.Header.Get("Content-Type"))
-
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&received))
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	defer srv.Close()
-
-	client := &PortainerEdgeClient{
-		edgeID:        "edge-id",
-		httpClient:    BuildHTTPClient(30, &agent.Options{}),
-		serverAddress: srv.URL,
-	}
-
-	err := client.PostEdgeAlerts(12, pkgmetrics.EdgeAlertBatch{
-		FiredAlerts: []pkgmetrics.FiredAlert{
-			{RuleID: 1, Severity: "warning", Message: "test alert"},
-		},
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"status":"ok"}`)),
+			Header:     make(http.Header),
+			Request:    r,
+		}, nil
 	})
 
-	require.NoError(t, err)
-	require.Len(t, received.FiredAlerts, 1)
-	assert.Equal(t, 1, received.FiredAlerts[0].RuleID)
-	assert.Equal(t, "warning", received.FiredAlerts[0].Severity)
-	assert.Equal(t, "test alert", received.FiredAlerts[0].Message)
-}
-
-func TestPostEdgeAlerts_ReturnsErrorOnNonNoContentResponse(t *testing.T) {
-	fips.InitFIPS(false)
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusBadRequest)
-	}))
-	defer srv.Close()
-
 	client := &PortainerEdgeClient{
-		edgeID:        "edge-id",
-		httpClient:    BuildHTTPClient(30, &agent.Options{}),
-		serverAddress: srv.URL,
+		edgeID:          "edge-id",
+		getEndpointIDFn: func() portainer.EndpointID { return 1 },
+		httpClient:      httpClient,
+		serverAddress:   "http://edge.test",
 	}
 
-	err := client.PostEdgeAlerts(99, pkgmetrics.EdgeAlertBatch{})
-	require.Error(t, err)
+	client.SetAlertState(&pkgmetrics.EdgeAlertState{
+		Rules: []pkgmetrics.EdgeAlertRuleState{{
+			RuleID:         7,
+			State:          pkgmetrics.AlertRuleStateFiring,
+			LastEvaluation: 123,
+		}},
+	})
+
+	require.JSONEq(t, `{"rules":[{"rule_id":7,"state":"firing","last_evaluation":123}]}`, client.alertStateHeader)
+
+	_, err := client.GetEnvironmentStatus()
+	require.NoError(t, err)
+
+	client.SetAlertState(nil)
+	require.Empty(t, client.alertStateHeader)
+}
+
+func TestGetEnvironmentStatusSendsContainerEngineHeader(t *testing.T) {
+	fips.InitFIPS(false)
+
+	httpClient := BuildHTTPClient(30, &agent.Options{})
+	httpClient.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		require.Equal(t, "podman", r.Header.Get(agent.HTTPResponseAgentContainerEngine))
+
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"status":"ok"}`)),
+			Header:     make(http.Header),
+			Request:    r,
+		}, nil
+	})
+
+	client := &PortainerEdgeClient{
+		edgeID:          "edge-id",
+		getEndpointIDFn: func() portainer.EndpointID { return 1 },
+		httpClient:      httpClient,
+		serverAddress:   "http://edge.test",
+		agentPlatform:   agent.PlatformPodman,
+	}
+
+	_, err := client.GetEnvironmentStatus()
+	require.NoError(t, err)
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

@@ -4,6 +4,13 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
+	"hash/fnv"
+	"net"
+	"net/url"
+	"os"
+	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -11,25 +18,70 @@ import (
 	"github.com/portainer/agent"
 	"github.com/portainer/agent/chisel"
 	"github.com/portainer/agent/edge/client"
+	"github.com/portainer/agent/edge/evaluator"
 	"github.com/portainer/agent/edge/policies"
 	"github.com/portainer/agent/edge/scheduler"
 	"github.com/portainer/agent/edge/stack"
+	agentmetrics "github.com/portainer/agent/http/handler/metrics"
 	"github.com/portainer/agent/kubernetes"
 	"github.com/portainer/portainer/pkg/libcrypto"
 	"github.com/portainer/portainer/pkg/librand"
 	pkgmetrics "github.com/portainer/portainer/pkg/metrics"
 
+	prommodel "github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/rs/zerolog/log"
 )
 
 const (
 	tunnelActivityCheckInterval = 30 * time.Second
 	// TODO: metricCollectionInterval should be made configurable via a CLI flag
-	metricCollectionInterval    = 60 * time.Second
-	globalKeyInUse              = 0
+	metricCollectionInterval = 60 * time.Second
+	globalKeyInUse           = 0
 )
 
-var collectPerformanceMetricsFn = kubernetes.CollectPerformanceMetrics
+var collectRawMetricsFn = kubernetes.CollectRawMetrics
+
+func init() {
+	if os.Getenv("PORTAINER_AGENT_FAKE_METRICS") == "" {
+		return
+	}
+
+	log.Warn().Msg("PORTAINER_AGENT_FAKE_METRICS is set — injecting synthetic high-usage metrics for alert testing")
+
+	collectRawMetricsFn = func(_ context.Context, _ *kubernetes.KubeClient) (*kubernetes.ClusterRawMetrics, error) {
+		return &kubernetes.ClusterRawMetrics{
+			HasCPU:                true,
+			CPUUsageNanoCores:     9_500_000_000,  // 9.5 cores used
+			CPUCapacityNanoCores:  10_000_000_000, // 10 cores total → 95%
+			HasMemory:             true,
+			MemoryWorkingSetBytes: 9_500_000_000,  // ~9.5 GB used
+			MemoryCapacityBytes:   10_000_000_000, // ~10 GB total → 95%
+			HasDisk:               true,
+			DiskUsedBytes:         950_000_000_000,   // ~950 GB used
+			DiskCapacityBytes:     1_000_000_000_000, // ~1 TB total → 95%
+			HasNetwork:            true,
+			NetworkRxBytes:        500_000_000, // 500 MB
+			NetworkTxBytes:        500_000_000, // 500 MB
+		}, nil
+	}
+}
+
+func buildMetricsScrapeTarget(apiServerAddr string) string {
+	if host, port, err := net.SplitHostPort(apiServerAddr); err == nil {
+		if host == "" {
+			apiServerAddr = net.JoinHostPort("localhost", port)
+		} else if ip := net.ParseIP(host); ip != nil && ip.IsUnspecified() {
+			apiServerAddr = net.JoinHostPort("localhost", port)
+		}
+	}
+
+	return (&url.URL{
+		Scheme: "http",
+		Host:   apiServerAddr,
+		Path:   "/api/metrics",
+	}).String()
+}
 
 // PollService is used to poll a Portainer instance to retrieve the status associated to the Edge endpoint.
 // It is responsible for managing the state of the reverse tunnel (open and closing after inactivity).
@@ -57,15 +109,21 @@ type PollService struct {
 	tunnelProxy              string
 	firstPoll                bool
 	alertRules               []pkgmetrics.EdgeAlertRule
+	alertRulesYAML           string
+	alertRulesHash        uint64
+	invalidAlertRulesHash *uint64
+	configReloadError        string
+	evaluator                *evaluator.Service
+	evaluatorInitAttempted   bool
+	metricsHandler           *agentmetrics.Handler
 	// Async mode only
-	pingInterval               time.Duration
-	snapshotInterval           time.Duration
-	commandInterval            time.Duration
-	pingTicker                 *time.Ticker
-	snapshotTicker             *time.Ticker
-	commandTicker              *time.Ticker
-	policies                   map[string]string // Name -> Fingerprint
-	prevNetworkCumulativeBytes uint64
+	pingInterval     time.Duration
+	snapshotInterval time.Duration
+	commandInterval  time.Duration
+	pingTicker       *time.Ticker
+	snapshotTicker   *time.Ticker
+	commandTicker    *time.Ticker
+	policies         map[string]string // Name -> Fingerprint
 }
 
 type pollServiceConfig struct {
@@ -116,6 +174,7 @@ func newPollService(edgeManager *Manager, edgeStackManager *stack.StackManager, 
 		tunnelProxy:              config.TunnelProxy,
 		portainerClient:          portainerClient,
 		firstPoll:                true,
+		metricsHandler:           edgeManager.MetricsHandler(),
 	}
 
 	if config.TunnelCapability {
@@ -159,6 +218,13 @@ func (service *PollService) Stop() {
 	if service.metricPushCancel != nil {
 		service.metricPushCancel()
 	}
+	if service.metricsHandler != nil {
+		service.metricsHandler.ClearMetrics()
+	}
+	service.portainerClient.SetAlertState(nil)
+	if service.evaluator != nil {
+		service.evaluator.Stop()
+	}
 }
 
 func (service *PollService) startStatusPollLoop() {
@@ -185,7 +251,6 @@ func (service *PollService) startStatusPollLoop() {
 			err := service.poll()
 			if err != nil {
 				log.Error().Err(err).Msg("an error occurred during short poll")
-
 				lastPollFailed = true
 				service.pollTicker.Reset(time.Duration(service.pollIntervalInSeconds) * time.Second)
 			}
@@ -193,7 +258,6 @@ func (service *PollService) startStatusPollLoop() {
 			pollCh = service.pollTicker.C
 		case <-service.stopSignal:
 			log.Debug().Msg("stopping Portainer short-polling client")
-
 			pollCh = nil
 		}
 	}
@@ -300,6 +364,23 @@ func (service *PollService) poll() error {
 	}
 
 	service.alertRules = environmentStatus.AlertRules
+	service.alertRulesYAML = environmentStatus.AlertRulesYAML
+
+	if service.evaluator == nil && !service.evaluatorInitAttempted {
+		service.evaluatorInitAttempted = true
+		if service.edgeManager.kubeClient != nil {
+			service.tryInitEvaluator()
+			if service.evaluator != nil {
+				log.Info().Msg("evaluator successfully initialized")
+			} else {
+				log.Warn().Msg("evaluator initialization failed, will not retry until restart")
+			}
+		} else {
+			log.Debug().Msg("evaluator not initialized: kubeClient is nil")
+		}
+	}
+	service.maybeReloadRules()
+	service.publishAlertState()
 
 	return service.processStacks(environmentStatus.Stacks)
 }
@@ -443,12 +524,20 @@ func (service *PollService) processEdgeConfigs(edgeConfigs map[client.EdgeConfig
 // startMetricPushLoop runs a background loop that collects Kubernetes performance
 // metrics and evaluates alert rules on each tick. It exits when ctx is cancelled.
 func (service *PollService) startMetricPushLoop(ctx context.Context) {
+	log.Info().
+		Dur("interval", metricCollectionInterval).
+		Msg("metric-tick: starting metric push loop")
+
+	// Fire immediately on first tick instead of waiting a full interval.
+	service.pushPerformanceMetrics(ctx)
+
 	ticker := time.NewTicker(metricCollectionInterval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
+			log.Debug().Msg("metric-tick: context cancelled, stopping metric push loop")
 			return
 		case <-ticker.C:
 			service.pushPerformanceMetrics(ctx)
@@ -456,32 +545,227 @@ func (service *PollService) startMetricPushLoop(ctx context.Context) {
 	}
 }
 
-// pushPerformanceMetrics collects cluster performance metrics from the Kubernetes API,
-// converts the raw cumulative network counters to a per-interval delta, and forwards
-// the result for alert rule evaluation.
+// pushPerformanceMetrics collects raw cluster metrics from the Kubernetes API and
+// updates the metrics handler gauges. The evaluator's scrape loop will pick them up.
 func (service *PollService) pushPerformanceMetrics(ctx context.Context) {
-	metrics, err := collectPerformanceMetricsFn(ctx, service.edgeManager.kubeClient)
-	if err != nil {
-		log.Debug().Err(err).Msg("failed to collect K8s performance metrics")
+	log.Debug().Msg("metric-tick: pushPerformanceMetrics called")
+
+	if service.metricsHandler == nil {
+		log.Debug().Msg("metric-tick: metricsHandler is nil, skipping")
 		return
 	}
 
-	if metrics != nil && metrics.NetworkUsage > 0 {
-		current := uint64(metrics.NetworkUsage)
-		if service.prevNetworkCumulativeBytes == 0 {
-			// First tick: establish baseline; no delta available yet.
-			service.prevNetworkCumulativeBytes = current
-			metrics.NetworkUsage = 0
-		} else if current >= service.prevNetworkCumulativeBytes {
-			metrics.NetworkUsage = float64(current - service.prevNetworkCumulativeBytes)
-			service.prevNetworkCumulativeBytes = current
-		} else {
-			// Counter reset (kubelet restart): new baseline, skip this tick.
-			service.prevNetworkCumulativeBytes = current
-			metrics.NetworkUsage = 0
-		}
+	raw, err := collectRawMetricsFn(ctx, service.edgeManager.kubeClient)
+	if err != nil {
+		service.metricsHandler.ClearMetrics()
+		log.Warn().Err(err).Msg("metric-tick: failed to collect K8s raw metrics, cleared published snapshot")
+		return
 	}
 
-	// TODO: evaluate rules and push fired alerts once rules are available
-	_ = metrics
+	log.Debug().
+		Bool("has_cpu", raw.HasCPU).
+		Bool("has_memory", raw.HasMemory).
+		Bool("has_disk", raw.HasDisk).
+		Bool("has_network", raw.HasNetwork).
+		Msg("metric-tick: collected metrics, updating gauges")
+
+	service.metricsHandler.UpdateMetrics(raw)
+
+	log.Debug().Msg("metric-tick: metrics updated successfully")
+}
+
+func (service *PollService) publishAlertState() {
+	var next *pkgmetrics.EdgeAlertState
+	if service.evaluator != nil {
+		next = buildEdgeAlertState(service.evaluator.AlertState(), service.configReloadError)
+	}
+
+	service.portainerClient.SetAlertState(next)
+}
+
+func buildEdgeAlertState(states []pkgmetrics.EdgeAlertRuleState, configReloadError string) *pkgmetrics.EdgeAlertState {
+	if len(states) == 0 && configReloadError == "" {
+		return nil
+	}
+
+	sort.Slice(states, func(i, j int) bool {
+		return states[i].RuleID < states[j].RuleID
+	})
+
+	return &pkgmetrics.EdgeAlertState{
+		Rules:             states,
+		ConfigReloadError: configReloadError,
+	}
+}
+
+// tryInitEvaluator creates and starts a new evaluator.Service for Prometheus rule evaluation.
+func (service *PollService) tryInitEvaluator() {
+	log.Debug().Msg("tryInitEvaluator: called")
+
+	if service.edgeManager.GetEndpointID() == globalKeyInUse {
+		log.Debug().Msg("tryInitEvaluator: endpoint ID is globalKeyInUse, skipping")
+		return
+	}
+
+	endpointID := service.edgeManager.GetEndpointID()
+	dataDir := filepath.Join(service.edgeManager.agentOptions.DataPath, "alerting", "tsdb")
+
+	poster, ok := service.portainerClient.(evaluator.AlertPoster)
+	if !ok {
+		log.Error().Msg("portainer client does not implement AlertPoster, cannot start evaluator")
+		return
+	}
+
+	scrapeTarget := buildMetricsScrapeTarget(service.apiServerAddr)
+	eval, err := evaluator.New(evaluator.Config{
+		DataDir:      dataDir,
+		EndpointID:   endpointID,
+		Poster:       poster,
+		ScrapeTarget: scrapeTarget,
+	})
+	if err != nil {
+		log.Error().Err(err).Msg("failed to create alert rule evaluator")
+		return
+	}
+
+	eval.Start()
+	service.evaluator = eval
+
+	log.Info().
+		Int("endpoint_id", int(endpointID)).
+		Str("data_dir", dataDir).
+		Msg("alert rule evaluator started")
+}
+
+// maybeReloadRules writes pre-compiled YAML from the server to disk and reloads
+// the evaluator if the rule set has changed since the last poll.
+// It validates the incoming YAML before writing, backs up the current file,
+// and rolls back on reload failure.
+func (service *PollService) maybeReloadRules() {
+	if service.evaluator == nil {
+		return
+	}
+
+	h := computeRulesHash(service.alertRulesYAML)
+	if h == service.alertRulesHash {
+		log.Debug().Msg("poll: alert rules unchanged, skipping reload")
+		return
+	}
+
+	if service.invalidAlertRulesHash != nil && h == *service.invalidAlertRulesHash {
+		log.Debug().Msg("poll: alert rules unchanged since previous validation failure, skipping reload")
+		return
+	}
+
+	log.Debug().
+		Int("rule_count", len(service.alertRules)).
+		Bool("has_yaml", service.alertRulesYAML != "").
+		Msg("poll: alert rules changed, writing to disk")
+
+	alertsDir := filepath.Join(service.edgeManager.agentOptions.DataPath, "alerting")
+	alertsFile := filepath.Join(alertsDir, "alerts.yaml")
+	backupFile := alertsFile + ".bak"
+
+	if service.alertRulesYAML == "" {
+		if err := service.evaluator.ReloadRules(""); err != nil {
+			log.Error().Err(err).Msg("failed to reload alert rules (clear)")
+			service.setReloadError("clear reload failed: " + err.Error())
+			return
+		}
+		// Delete files only after the reload succeeds so we can roll back on failure.
+		_ = os.Remove(alertsFile)
+		_ = os.Remove(backupFile)
+		service.alertRulesHash = h
+		service.invalidAlertRulesHash = nil
+		service.setReloadError("")
+		log.Info().Msg("alert rules cleared")
+		return
+	}
+
+	// Validate incoming YAML before writing to disk.
+	if _, errs := rulefmt.Parse([]byte(service.alertRulesYAML), false, prommodel.UTF8Validation); len(errs) > 0 {
+		errMsg := "invalid alert rules YAML from server: " + errs[0].Error()
+		service.invalidAlertRulesHash = &h
+		log.Error().Str("error", errs[0].Error()).Msg("poll: received invalid alert rules YAML, skipping write")
+		service.setReloadError(errMsg)
+		return
+	}
+
+	if err := os.MkdirAll(alertsDir, 0o750); err != nil {
+		log.Error().Err(err).Msg("failed to create alerting directory")
+		service.setReloadError("create alerting dir: " + err.Error())
+		return
+	}
+
+	// Back up existing alerts.yaml before overwriting (ignore if file doesn't exist).
+	if err := copyFile(alertsFile, backupFile); err != nil && !os.IsNotExist(err) {
+		log.Warn().Err(err).Msg("failed to back up alerts.yaml, proceeding anyway")
+	}
+
+	// Atomic write: temp file + rename
+	tmpFile := alertsFile + ".tmp"
+	if err := os.WriteFile(tmpFile, []byte(service.alertRulesYAML), 0o600); err != nil {
+		log.Error().Err(err).Msg("failed to write alerts.yaml temp file")
+		service.setReloadError("write temp file: " + err.Error())
+		return
+	}
+	if err := os.Rename(tmpFile, alertsFile); err != nil {
+		log.Error().Err(err).Msg("failed to rename alerts.yaml temp file")
+		service.setReloadError("rename temp file: " + err.Error())
+		return
+	}
+
+	if err := service.evaluator.ReloadRules(alertsFile); err != nil {
+		log.Error().Err(err).Msg("failed to reload alert rules, attempting rollback")
+
+		// Rollback: restore backup and reload with previous rules.
+		if restoreErr := restoreBackup(backupFile, alertsFile); restoreErr != nil {
+			log.Error().Err(restoreErr).Msg("rollback: failed to restore alerts.yaml.bak")
+			service.setReloadError("reload failed and rollback failed: " + err.Error())
+			return
+		}
+		if rollbackErr := service.evaluator.ReloadRules(alertsFile); rollbackErr != nil {
+			log.Error().Err(rollbackErr).Msg("rollback: failed to reload restored rules")
+			service.setReloadError("reload failed and rollback reload failed: " + err.Error())
+			return
+		}
+		log.Warn().Msg("rollback: successfully restored previous alert rules")
+		service.setReloadError("reload failed, rolled back to previous rules: " + err.Error())
+		return
+	}
+
+	_ = os.Remove(backupFile)
+	service.alertRulesHash = h
+	service.invalidAlertRulesHash = nil
+	service.setReloadError("")
+	log.Info().Int("rule_count", len(service.alertRules)).Msg("alert rules reloaded from YAML")
+}
+
+func (service *PollService) setReloadError(errMsg string) {
+	service.configReloadError = errMsg
+}
+
+// copyFile copies src to dst, creating or truncating dst.
+func copyFile(src, dst string) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, data, 0o600)
+}
+
+// restoreBackup moves the backup file back to the original path.
+func restoreBackup(backupPath, originalPath string) error {
+	if err := os.Rename(backupPath, originalPath); err != nil {
+		return fmt.Errorf("restore backup failed: %w", err)
+	}
+	return nil
+}
+
+// computeRulesHash returns an FNV-64a hash over the YAML content that is
+// actually written to disk, so change-detection matches the deployed artifact.
+func computeRulesHash(yamlContent string) uint64 {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(yamlContent))
+	return h.Sum64()
 }

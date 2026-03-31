@@ -32,7 +32,7 @@ type PortainerClient interface {
 	EnqueueLogCollectionForStack(logCmd LogCommandData)
 	GetCharts(chartNames []string) ([]portainer.PolicyChartBundle, portainer.RestoreSettingsBundle, error)
 	UpdatePolicyChartStatuses(statuses []portainer.PolicyChartStatus) error
-	PostEdgeAlerts(endpointID portainer.EndpointID, payload pkgmetrics.EdgeAlertBatch) error
+	SetAlertState(state *pkgmetrics.EdgeAlertState)
 }
 
 type EdgeConfigID int
@@ -74,6 +74,7 @@ type PollStatusResponse struct {
 	EdgeConfigurations   map[EdgeConfigID]EdgeConfigStateType `json:"edge_configurations"`
 	PolicyChartSummaries []portainer.PolicyChartSummary       `json:"policy_chart_summaries"`
 	AlertRules           []pkgmetrics.EdgeAlertRule           `json:"alert_rules"`
+	AlertRulesYAML       string                               `json:"alert_rules_yaml,omitempty"`
 
 	// Async mode only
 	EndpointID       int            `json:"endpointID"`

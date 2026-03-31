@@ -285,6 +285,8 @@ const (
 	// HTTPResponseAgentContainerEngine is the name of the header that will have the container engine type
 	// (e.g., "docker" or "podman")
 	HTTPResponseAgentContainerEngine = "Portainer-Agent-Container-Engine"
+	// HTTPAlertStateHeaderName is the name of the header used to transmit edge alert evaluation state.
+	HTTPAlertStateHeaderName = "X-PortainerAgent-AlertState"
 	// PortainerAgentSignatureMessage is the unhashed content that is signed by the Portainer instance.
 	// It is used by the agent during the signature verification process.
 	PortainerAgentSignatureMessage = "Portainer-App"

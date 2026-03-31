@@ -106,6 +106,10 @@ func (client *PortainerAsyncClient) SetTimeout(t time.Duration) {
 	client.httpClient.httpClient.Timeout = t
 }
 
+func (client *PortainerAsyncClient) SetAlertState(_ *pkgmetrics.EdgeAlertState) {
+	// Alert state reporting is only supported in non-async (short poll) mode.
+}
+
 type MetaFields struct {
 	EdgeGroupsIDs      []int `json:"edgeGroupsIds"`
 	TagsIDs            []int `json:"tagsIds"`
@@ -533,11 +537,6 @@ func (client *PortainerAsyncClient) UpdatePolicyChartStatuses(statuses []portain
 		client.nextSnapshot.PolicyStatus[status.ChartName] = append(client.nextSnapshot.PolicyStatus[status.ChartName], status)
 	}
 
-	return nil
-}
-
-// PostEdgeAlerts is not yet supported for async Edge environments.
-func (client *PortainerAsyncClient) PostEdgeAlerts(_ portainer.EndpointID, _ pkgmetrics.EdgeAlertBatch) error {
 	return nil
 }
 

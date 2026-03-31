@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/portainer/agent"
@@ -132,7 +133,13 @@ func (server *APIServer) edgeHandler(next http.Handler) http.Handler {
 			return
 		}
 
-		server.edgeManager.ResetActivityTimer()
+		// Do not reset the activity timer for the local /api/metrics endpoint.
+		// The evaluator scrapes /api/metrics every 60 s from localhost; counting
+		// those self-originated requests as user activity would keep an idle
+		// reverse tunnel alive indefinitely.
+		if !strings.HasPrefix(r.URL.Path, "/api/metrics") {
+			server.edgeManager.ResetActivityTimer()
+		}
 
 		next.ServeHTTP(w, r)
 	})

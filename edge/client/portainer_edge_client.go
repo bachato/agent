@@ -12,9 +12,11 @@ import (
 	"time"
 
 	"github.com/portainer/agent"
+	aos "github.com/portainer/agent/os"
 	portainer "github.com/portainer/portainer/api"
 	"github.com/portainer/portainer/api/edge"
 	pkgmetrics "github.com/portainer/portainer/pkg/metrics"
+	alertmanagermodels "github.com/prometheus/alertmanager/api/v2/models"
 
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/pkg/errors"
@@ -25,15 +27,16 @@ const requestRetryWait = 5 * time.Second
 
 // PortainerEdgeClient is used to execute HTTP requests against the Portainer API
 type PortainerEdgeClient struct {
-	version         string
-	httpClient      *edgeHTTPClient
-	serverAddress   string
-	setEndpointIDFn setEndpointIDFn
-	getEndpointIDFn getEndpointIDFn
-	edgeID          string
-	agentPlatform   agent.ContainerPlatform
-	metaFields      agent.EdgeMetaFields
-	reqCache        *lru.Cache
+	version          string
+	httpClient       *edgeHTTPClient
+	serverAddress    string
+	setEndpointIDFn  setEndpointIDFn
+	getEndpointIDFn  getEndpointIDFn
+	edgeID           string
+	agentPlatform    agent.ContainerPlatform
+	metaFields       agent.EdgeMetaFields
+	reqCache         *lru.Cache
+	alertStateHeader string
 }
 
 type globalKeyResponse struct {
@@ -104,6 +107,28 @@ func NewPortainerEdgeClient(
 
 func (client *PortainerEdgeClient) SetTimeout(t time.Duration) {
 	client.httpClient.httpClient.Timeout = t
+}
+
+// SetAlertState stores the JSON-serialised alert state for inclusion in the
+// next poll request as an HTTP header.
+//
+// WARNING: the header value is unbounded in size. With many alert rules or
+// verbose reload-error text the payload may exceed the header-size limit of
+// an intermediate reverse proxy (commonly 8 KB per header). This should be
+// migrated to a dedicated request-body field in a future change.
+func (client *PortainerEdgeClient) SetAlertState(state *pkgmetrics.EdgeAlertState) {
+	client.alertStateHeader = ""
+	if state == nil {
+		return
+	}
+
+	alertJSON, err := json.Marshal(state)
+	if err != nil {
+		log.Warn().Err(err).Msg("failed to marshal alert state")
+		return
+	}
+
+	client.alertStateHeader = string(alertJSON)
 }
 
 func (client *PortainerEdgeClient) GetEnvironmentID() (portainer.EndpointID, error) {
@@ -178,6 +203,14 @@ func (client *PortainerEdgeClient) GetEnvironmentStatus(flags ...string) (*PollS
 	log.Debug().Int("agent_platform", int(client.agentPlatform)).Str("time_zone", timeZone).Msg("sending headers")
 
 	req.Header.Set(agent.HTTPResponseUpdateIDHeaderName, strconv.Itoa(client.metaFields.UpdateID))
+
+	if containerEngine := aos.GetContainerEngineName(client.agentPlatform); containerEngine != "" {
+		req.Header.Set(agent.HTTPResponseAgentContainerEngine, containerEngine)
+	}
+
+	if client.alertStateHeader != "" {
+		req.Header.Set(agent.HTTPAlertStateHeaderName, client.alertStateHeader)
+	}
 
 	resp, err := client.httpClient.Do(req)
 	if err != nil {
@@ -502,40 +535,75 @@ func (client *PortainerEdgeClient) SetEdgeConfigState(id EdgeConfigID, state Edg
 	return nil
 }
 
-// PostEdgeAlerts sends a batch of alerts and raw signals to the Portainer server.
-func (client *PortainerEdgeClient) PostEdgeAlerts(endpointID portainer.EndpointID, payload pkgmetrics.EdgeAlertBatch) error {
-	data, err := json.Marshal(payload)
+// PostAlerts sends standard Alertmanager PostableAlerts to the Portainer server.
+// Unlike other edge client methods that retry until the server recovers, this
+// method uses a bounded 3-attempt retry. Alerts are dispatched from a
+// fire-and-forget goroutine in the evaluator, so unbounded retries would
+// accumulate goroutines under persistent server failures.
+func (client *PortainerEdgeClient) PostAlerts(endpointID portainer.EndpointID, alerts alertmanagermodels.PostableAlerts) error {
+	log.Debug().
+		Int("endpoint_id", int(endpointID)).
+		Int("alert_count", len(alerts)).
+		Msg("client: posting alerts to server")
+
+	data, err := json.Marshal(alerts)
 	if err != nil {
 		return err
 	}
 
 	requestURL := fmt.Sprintf("%s/api/endpoints/%d/edge/alerts", client.serverAddress, endpointID)
 
-	req, err := http.NewRequest(http.MethodPost, requestURL, bytes.NewReader(data))
-	if err != nil {
-		return err
+	const maxRetries = 3
+	var lastErr error
+	var statusCode int
+
+	for attempt := range maxRetries {
+		req, err := http.NewRequest(http.MethodPost, requestURL, bytes.NewReader(data))
+		if err != nil {
+			return err
+		}
+
+		req.Header.Set(agent.HTTPEdgeIdentifierHeaderName, client.edgeID)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := client.httpClient.Do(req)
+		if err != nil {
+			lastErr = err
+			log.Warn().Err(err).Int("attempt", attempt+1).Msg("PostAlerts request failed")
+			if attempt < maxRetries-1 {
+				requestRetrySleep(requestRetryWait)
+			}
+			continue
+		}
+
+		_, _ = io.Copy(io.Discard, resp.Body)
+		if err := resp.Body.Close(); err != nil {
+			log.Warn().Err(err).Int("attempt", attempt+1).Msg("PostAlerts failed to close response body")
+		}
+		statusCode = resp.StatusCode
+
+		if statusCode == http.StatusNoContent {
+			return nil
+		}
+
+		if statusCode < http.StatusInternalServerError {
+			break // 4xx — not transient, don't retry
+		}
+
+		lastErr = fmt.Errorf("server returned %d", statusCode)
+		log.Warn().Int("response_code", statusCode).Int("attempt", attempt+1).Msg("PostAlerts server error, retrying")
+		if attempt < maxRetries-1 {
+			requestRetrySleep(requestRetryWait)
+		}
 	}
 
-	req.Header.Set(agent.HTTPEdgeIdentifierHeaderName, client.edgeID)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := client.httpClient.Do(req)
-	if err != nil {
-		return err
+	if lastErr != nil {
+		log.Error().Err(lastErr).Msg("post alerts: all retries exhausted")
+		return fmt.Errorf("post alerts: %w", lastErr)
 	}
 
-	_, _ = io.Copy(io.Discard, resp.Body)
-	if err := resp.Body.Close(); err != nil {
-		return fmt.Errorf("failed to close response body: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusNoContent {
-		log.Error().Int("response_code", resp.StatusCode).Msg("PostEdgeAlerts operation failed")
-
-		return errors.New("PostEdgeAlerts operation failed")
-	}
-
-	return nil
+	log.Error().Int("response_code", statusCode).Msg("post alerts: unexpected status code")
+	return fmt.Errorf("post alerts: unexpected status %d", statusCode)
 }
 
 func (client *PortainerEdgeClient) ProcessAsyncCommands() error {

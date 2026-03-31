@@ -13,6 +13,7 @@ import (
 	"github.com/portainer/agent/edge/policies"
 	"github.com/portainer/agent/edge/scheduler"
 	"github.com/portainer/agent/edge/stack"
+	agentmetrics "github.com/portainer/agent/http/handler/metrics"
 	"github.com/portainer/agent/kubernetes"
 	portainer "github.com/portainer/portainer/api"
 	"github.com/portainer/portainer/api/filesystem"
@@ -32,6 +33,7 @@ type (
 		kubeClient        *kubernetes.KubeClient
 		key               *edgeKey
 		logsManager       *scheduler.LogsManager
+		metricsHandler    *agentmetrics.Handler
 		pollService       *PollService
 		stackManager      *stack.StackManager
 		mu                sync.Mutex
@@ -54,6 +56,11 @@ func (manager *Manager) GetStackManager() *stack.StackManager {
 
 // NewManager returns a pointer to a new instance of Manager
 func NewManager(parameters *ManagerParameters) *Manager {
+	var metricsHandler *agentmetrics.Handler
+	if parameters.ContainerPlatform == agent.PlatformKubernetes {
+		metricsHandler = agentmetrics.NewHandler()
+	}
+
 	return &Manager{
 		clusterService:    parameters.ClusterService,
 		dockerInfoService: parameters.DockerInfoService,
@@ -61,6 +68,7 @@ func NewManager(parameters *ManagerParameters) *Manager {
 		advertiseAddr:     parameters.AdvertiseAddr,
 		containerPlatform: parameters.ContainerPlatform,
 		kubeClient:        parameters.KubeClient,
+		metricsHandler:    metricsHandler,
 	}
 }
 
@@ -146,6 +154,12 @@ func (manager *Manager) Start() error {
 // ResetActivityTimer resets the activity timer
 func (manager *Manager) ResetActivityTimer() {
 	manager.pollService.resetActivityTimer()
+}
+
+// MetricsHandler returns the agent metrics handler for the /api/metrics endpoint.
+// Returns nil when metrics collection is not enabled for the current platform.
+func (manager *Manager) MetricsHandler() *agentmetrics.Handler {
+	return manager.metricsHandler
 }
 
 // SetEndpointID set the endpointID of the agent
