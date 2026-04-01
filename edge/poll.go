@@ -24,6 +24,7 @@ import (
 	"github.com/portainer/agent/edge/stack"
 	agentmetrics "github.com/portainer/agent/http/handler/metrics"
 	"github.com/portainer/agent/kubernetes"
+	portainer "github.com/portainer/portainer/api"
 	"github.com/portainer/portainer/pkg/libcrypto"
 	"github.com/portainer/portainer/pkg/librand"
 	pkgmetrics "github.com/portainer/portainer/pkg/metrics"
@@ -83,6 +84,10 @@ func buildMetricsScrapeTarget(apiServerAddr string) string {
 	}).String()
 }
 
+func buildAlertmanagerTarget(portainerURL string, endpointID portainer.EndpointID) string {
+	return strings.TrimRight(portainerURL, "/") + fmt.Sprintf("/api/endpoints/%d/edge/alerts", endpointID)
+}
+
 // PollService is used to poll a Portainer instance to retrieve the status associated to the Edge endpoint.
 // It is responsible for managing the state of the reverse tunnel (open and closing after inactivity).
 // It is also responsible for retrieving the data associated to Edge stacks and schedules.
@@ -110,8 +115,8 @@ type PollService struct {
 	firstPoll                bool
 	alertRules               []pkgmetrics.EdgeAlertRule
 	alertRulesYAML           string
-	alertRulesHash        uint64
-	invalidAlertRulesHash *uint64
+	alertRulesHash           uint64
+	invalidAlertRulesHash    *uint64
 	configReloadError        string
 	evaluator                *evaluator.Service
 	evaluatorInitAttempted   bool
@@ -608,20 +613,19 @@ func (service *PollService) tryInitEvaluator() {
 	}
 
 	endpointID := service.edgeManager.GetEndpointID()
-	dataDir := filepath.Join(service.edgeManager.agentOptions.DataPath, "alerting", "tsdb")
-
-	poster, ok := service.portainerClient.(evaluator.AlertPoster)
-	if !ok {
-		log.Error().Msg("portainer client does not implement AlertPoster, cannot start evaluator")
-		return
-	}
+	dataDir := filepath.Join(service.edgeManager.agentOptions.DataPath, "alerting")
 
 	scrapeTarget := buildMetricsScrapeTarget(service.apiServerAddr)
+	alertmanagerTarget := buildAlertmanagerTarget(service.portainerURL, endpointID)
 	eval, err := evaluator.New(evaluator.Config{
-		DataDir:      dataDir,
-		EndpointID:   endpointID,
-		Poster:       poster,
-		ScrapeTarget: scrapeTarget,
+		DataDir:            dataDir,
+		EndpointID:         endpointID,
+		ScrapeTarget:       scrapeTarget,
+		AlertmanagerTarget: alertmanagerTarget,
+		AlertmanagerHeaders: map[string]string{
+			agent.HTTPEdgeIdentifierHeaderName: service.edgeID,
+		},
+		InsecureSkipVerify: service.edgeManager.agentOptions.EdgeInsecurePoll,
 	})
 	if err != nil {
 		log.Error().Err(err).Msg("failed to create alert rule evaluator")

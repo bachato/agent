@@ -6,16 +6,9 @@ import (
 	"testing"
 
 	portainer "github.com/portainer/portainer/api"
-	alertmanagermodels "github.com/prometheus/alertmanager/api/v2/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-type noopAlertPoster struct{}
-
-func (noopAlertPoster) PostAlerts(portainer.EndpointID, alertmanagermodels.PostableAlerts) error {
-	return nil
-}
 
 func TestNewPreservesExistingTSDBDataDir(t *testing.T) {
 	dataDir := filepath.Join(t.TempDir(), "tsdb")
@@ -26,12 +19,11 @@ func TestNewPreservesExistingTSDBDataDir(t *testing.T) {
 	svc, err := New(Config{
 		DataDir:    dataDir,
 		EndpointID: portainer.EndpointID(1),
-		Poster:     noopAlertPoster{},
 	})
 	require.NoError(t, err)
 	t.Cleanup(svc.Stop)
 
-	// The marker file should still exist — ensureTSDBDataDir does not wipe.
+	// The marker file should still exist — ensureDataDir does not wipe.
 	_, err = os.Stat(markerFile)
 	require.NoError(t, err)
 

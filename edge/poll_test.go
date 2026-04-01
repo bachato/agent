@@ -16,19 +16,11 @@ import (
 	agentmetrics "github.com/portainer/agent/http/handler/metrics"
 	"github.com/portainer/agent/internals/mocks"
 	"github.com/portainer/agent/kubernetes"
-	portainer "github.com/portainer/portainer/api"
 	pkgmetrics "github.com/portainer/portainer/pkg/metrics"
-	alertmanagermodels "github.com/prometheus/alertmanager/api/v2/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
-
-type testAlertPoster struct{}
-
-func (testAlertPoster) PostAlerts(portainer.EndpointID, alertmanagermodels.PostableAlerts) error {
-	return nil
-}
 
 func TestBuildMetricsScrapeTargetUsesConfiguredHostPort(t *testing.T) {
 	assert.Equal(t, "http://127.0.0.1:9001/api/metrics", buildMetricsScrapeTarget("127.0.0.1:9001"))
@@ -129,7 +121,6 @@ func TestPollPublishesAlertStateAfterReloadHandling(t *testing.T) {
 	eval, err := evaluator.New(evaluator.Config{
 		DataDir:    filepath.Join(dataDir, "tsdb"),
 		EndpointID: 1,
-		Poster:     testAlertPoster{},
 	})
 	require.NoError(t, err)
 	eval.Start()
@@ -195,7 +186,6 @@ func TestMaybeReloadRulesRetriesAfterFilesystemFailure(t *testing.T) {
 	eval, err := evaluator.New(evaluator.Config{
 		DataDir:    filepath.Join(t.TempDir(), "evaluator-data"),
 		EndpointID: 1,
-		Poster:     testAlertPoster{},
 	})
 	require.NoError(t, err)
 	eval.Start()

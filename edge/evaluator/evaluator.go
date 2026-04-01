@@ -10,26 +10,25 @@ import (
 	portainer "github.com/portainer/portainer/api"
 	libprom "github.com/portainer/portainer/pkg/libprometheus"
 	pkgmetrics "github.com/portainer/portainer/pkg/metrics"
-	alertmanagermodels "github.com/prometheus/alertmanager/api/v2/models"
 	prometheusreg "github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/rules"
+	"github.com/prometheus/prometheus/scrape"
 	"github.com/rs/zerolog/log"
 )
 
 const defaultRuleEvalInterval = 60 * time.Second
 
-// AlertPoster can post alerts to the Portainer server.
-type AlertPoster interface {
-	PostAlerts(endpointID portainer.EndpointID, alerts alertmanagermodels.PostableAlerts) error
-}
-
 // Config holds the configuration for the alert evaluator.
 type Config struct {
-	DataDir        string
-	EndpointID     portainer.EndpointID
-	Poster         AlertPoster
-	ScrapeTarget   string
-	ScrapeInterval time.Duration // default: 60s
+	DataDir             string
+	EndpointID          portainer.EndpointID
+	ScrapeTarget        string
+	AlertmanagerTarget  string
+	AlertmanagerHeaders map[string]string
+	ScrapeInterval      time.Duration // default: 60s
+	InsecureSkipVerify  bool
 }
 
 func (c *Config) scrapeInterval() time.Duration {
@@ -43,13 +42,14 @@ func (c *Config) scrapeInterval() time.Duration {
 type Service struct {
 	db             *libprom.InMemoryDB
 	manager        *rules.Manager
+	notifier       *notifier.Manager
 	endpointID     portainer.EndpointID
-	poster         AlertPoster
 	scrapeInterval time.Duration
 
-	mu           sync.RWMutex
-	scrapeTarget string
-	scrapeCancel context.CancelFunc
+	mu            sync.RWMutex
+	scrapeManager *scrape.Manager
+	scrapeTsets   chan map[string][]*targetgroup.Group
+	notifyTsets   chan map[string][]*targetgroup.Group
 }
 
 // New opens a TSDB under dataDir and wires up a Prometheus rules.Manager.
@@ -60,14 +60,12 @@ func New(cfg Config) (*Service, error) {
 		Str("scrape_target", cfg.ScrapeTarget).
 		Msg("evaluator.New: creating evaluator")
 
-	if err := ensureTSDBDataDir(cfg.DataDir); err != nil {
+	if err := ensureDataDir(cfg.DataDir); err != nil {
 		return nil, err
 	}
 
 	svc := &Service{
 		endpointID:     cfg.EndpointID,
-		poster:         cfg.Poster,
-		scrapeTarget:   cfg.ScrapeTarget,
 		scrapeInterval: cfg.scrapeInterval(),
 	}
 
@@ -80,56 +78,91 @@ func New(cfg Config) (*Service, error) {
 		return nil, fmt.Errorf("open TSDB: %w", err)
 	}
 	svc.db = db
+	cleanupDB := true
+	defer func() {
+		if cleanupDB {
+			if err := db.Close(); err != nil {
+				log.Warn().Err(err).Msg("evaluator.New: error closing TSDB after initialization failure")
+			}
+		}
+	}()
 	log.Debug().Msg("evaluator.New: TSDB opened successfully")
 
 	engine := libprom.NewEngine()
+
+	// Write config.yaml — this is both the on-disk artefact and the runtime
+	// source of truth: it is loaded back immediately to configure the scrape manager.
+	if cfg.ScrapeTarget != "" {
+		managers, err := libprom.BootstrapManagerSet(cfg.DataDir, libprom.PrometheusConfigOptions{
+			ScrapeInterval:      cfg.scrapeInterval().String(),
+			JobName:             "edge-agent",
+			ScrapeTarget:        cfg.ScrapeTarget,
+			AlertmanagerTarget:  cfg.AlertmanagerTarget,
+			AlertmanagerHeaders: cfg.AlertmanagerHeaders,
+			InsecureSkipVerify:  cfg.InsecureSkipVerify,
+		}, db, reg)
+		if err != nil {
+			return nil, fmt.Errorf("bootstrap prometheus managers: %w", err)
+		}
+
+		svc.scrapeManager = managers.ScrapeManager
+		svc.scrapeTsets = managers.ScrapeTargetSets
+		svc.notifier = managers.NotifierManager
+		svc.notifyTsets = managers.NotifierTargetSets
+	}
+
+	notifyFunc := rules.NotifyFunc(func(context.Context, string, ...*rules.Alert) {})
+	if svc.notifier != nil {
+		notifyFunc = rules.SendAlerts(svc.notifier, "")
+	}
 
 	svc.manager = libprom.NewRuleManager(libprom.RuleManagerConfig{
 		Engine:     engine,
 		Queryable:  db,
 		Appendable: db,
-		NotifyFunc: svc.notify,
+		NotifyFunc: notifyFunc,
 		Context:    context.Background(),
 		Registerer: reg,
 	})
 
-	// Write a config.yaml for inspectability.
-	if err := libprom.WritePrometheusConfig(cfg.DataDir, cfg.scrapeInterval().String(), "edge-agent", cfg.ScrapeTarget); err != nil {
-		log.Warn().Err(err).Msg("evaluator.New: failed to write prometheus config.yaml (non-fatal)")
-	}
-
 	log.Info().Msg("evaluator.New: evaluator created successfully")
+	cleanupDB = false
 
 	return svc, nil
 }
 
-// ensureTSDBDataDir creates the data directory if it does not exist.
-// The TSDB itself is in-memory (NewInMemoryTSDB uses a tmpdir); this
-// directory holds on-disk config artefacts only. No metric data persists
-// across process restarts.
-func ensureTSDBDataDir(dataDir string) error {
+// ensureDataDir creates the alerting data directory if it does not exist.
+// The TSDB is in-memory (NewInMemoryTSDB uses a tmpdir); this directory
+// holds config.yaml and alerts.yaml only. No metric data persists across
+// process restarts.
+func ensureDataDir(dataDir string) error {
 	if dataDir == "" || dataDir == string(os.PathSeparator) {
-		return fmt.Errorf("invalid TSDB data dir. path=%q", dataDir)
+		return fmt.Errorf("invalid data dir. path=%q", dataDir)
 	}
 
 	return os.MkdirAll(dataDir, 0o750)
 }
 
-// Start begins rule evaluation and the scrape loop in the background.
+// Start begins rule evaluation and the scrape manager in the background.
 func (s *Service) Start() {
 	go s.manager.Run()
 
-	if s.scrapeTarget != "" {
-		ctx, cancel := context.WithCancel(context.Background())
-		s.scrapeCancel = cancel
-		go s.startScrapeLoop(ctx, s.scrapeInterval)
+	if s.scrapeManager != nil {
+		go s.scrapeManager.Run(s.scrapeTsets) //nolint:errcheck // Run returns only on shutdown
+	}
+
+	if s.notifier != nil {
+		go s.notifier.Run(s.notifyTsets)
 	}
 }
 
-// Stop halts evaluation, scrape loop, and closes the TSDB.
+// Stop halts the scrape manager, rule evaluation, and closes the TSDB.
 func (s *Service) Stop() {
-	if s.scrapeCancel != nil {
-		s.scrapeCancel()
+	if s.notifier != nil {
+		s.notifier.Stop()
+	}
+	if s.scrapeManager != nil {
+		s.scrapeManager.Stop()
 	}
 	s.manager.Stop()
 	if err := s.db.Close(); err != nil {

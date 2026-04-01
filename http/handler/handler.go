@@ -1,13 +1,13 @@
 package handler
 
 import (
-	"net"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/portainer/agent"
+	"github.com/portainer/portainer/pkg/libhttp"
 	"github.com/portainer/agent/edge"
 	"github.com/portainer/agent/exec"
 	httpagenthandler "github.com/portainer/agent/http/handler/agent"
@@ -128,7 +128,7 @@ func (h *Handler) ServeHTTP(rw http.ResponseWriter, request *http.Request) {
 	case strings.HasPrefix(request.URL.Path, "/ping"):
 		h.pingHandler.ServeHTTP(rw, request)
 	case strings.HasPrefix(request.URL.Path, "/api/metrics"):
-		if !isLocalRequest(request) {
+		if !libhttp.IsLocalRequest(request) {
 			http.Error(rw, "Forbidden", http.StatusForbidden)
 			return
 		}
@@ -150,36 +150,3 @@ func (h *Handler) ServeHTTP(rw http.ResponseWriter, request *http.Request) {
 	}
 }
 
-// isLocalRequest returns true when the request originates from the local host.
-// It accepts both loopback requests and self-dials to the listener's bound IP.
-func isLocalRequest(r *http.Request) bool {
-	remoteIP := parseRequestIP(r.RemoteAddr)
-	if remoteIP == nil {
-		return false
-	}
-
-	if remoteIP.IsLoopback() {
-		return true
-	}
-
-	localAddr, ok := r.Context().Value(http.LocalAddrContextKey).(net.Addr)
-	if !ok {
-		return false
-	}
-
-	localIP := parseRequestIP(localAddr.String())
-	if localIP == nil {
-		return false
-	}
-
-	return remoteIP.Equal(localIP)
-}
-
-func parseRequestIP(addr string) net.IP {
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		return nil
-	}
-
-	return net.ParseIP(host)
-}

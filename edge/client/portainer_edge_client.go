@@ -16,7 +16,6 @@ import (
 	portainer "github.com/portainer/portainer/api"
 	"github.com/portainer/portainer/api/edge"
 	pkgmetrics "github.com/portainer/portainer/pkg/metrics"
-	alertmanagermodels "github.com/prometheus/alertmanager/api/v2/models"
 
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/pkg/errors"
@@ -533,77 +532,6 @@ func (client *PortainerEdgeClient) SetEdgeConfigState(id EdgeConfigID, state Edg
 	}
 
 	return nil
-}
-
-// PostAlerts sends standard Alertmanager PostableAlerts to the Portainer server.
-// Unlike other edge client methods that retry until the server recovers, this
-// method uses a bounded 3-attempt retry. Alerts are dispatched from a
-// fire-and-forget goroutine in the evaluator, so unbounded retries would
-// accumulate goroutines under persistent server failures.
-func (client *PortainerEdgeClient) PostAlerts(endpointID portainer.EndpointID, alerts alertmanagermodels.PostableAlerts) error {
-	log.Debug().
-		Int("endpoint_id", int(endpointID)).
-		Int("alert_count", len(alerts)).
-		Msg("client: posting alerts to server")
-
-	data, err := json.Marshal(alerts)
-	if err != nil {
-		return err
-	}
-
-	requestURL := fmt.Sprintf("%s/api/endpoints/%d/edge/alerts", client.serverAddress, endpointID)
-
-	const maxRetries = 3
-	var lastErr error
-	var statusCode int
-
-	for attempt := range maxRetries {
-		req, err := http.NewRequest(http.MethodPost, requestURL, bytes.NewReader(data))
-		if err != nil {
-			return err
-		}
-
-		req.Header.Set(agent.HTTPEdgeIdentifierHeaderName, client.edgeID)
-		req.Header.Set("Content-Type", "application/json")
-
-		resp, err := client.httpClient.Do(req)
-		if err != nil {
-			lastErr = err
-			log.Warn().Err(err).Int("attempt", attempt+1).Msg("PostAlerts request failed")
-			if attempt < maxRetries-1 {
-				requestRetrySleep(requestRetryWait)
-			}
-			continue
-		}
-
-		_, _ = io.Copy(io.Discard, resp.Body)
-		if err := resp.Body.Close(); err != nil {
-			log.Warn().Err(err).Int("attempt", attempt+1).Msg("PostAlerts failed to close response body")
-		}
-		statusCode = resp.StatusCode
-
-		if statusCode == http.StatusNoContent {
-			return nil
-		}
-
-		if statusCode < http.StatusInternalServerError {
-			break // 4xx — not transient, don't retry
-		}
-
-		lastErr = fmt.Errorf("server returned %d", statusCode)
-		log.Warn().Int("response_code", statusCode).Int("attempt", attempt+1).Msg("PostAlerts server error, retrying")
-		if attempt < maxRetries-1 {
-			requestRetrySleep(requestRetryWait)
-		}
-	}
-
-	if lastErr != nil {
-		log.Error().Err(lastErr).Msg("post alerts: all retries exhausted")
-		return fmt.Errorf("post alerts: %w", lastErr)
-	}
-
-	log.Error().Int("response_code", statusCode).Msg("post alerts: unexpected status code")
-	return fmt.Errorf("post alerts: unexpected status %d", statusCode)
 }
 
 func (client *PortainerEdgeClient) ProcessAsyncCommands() error {
