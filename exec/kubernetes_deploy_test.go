@@ -37,7 +37,7 @@ func (m *mockKubectlClient) RolloutRestart(ctx context.Context, resources []stri
 	return nil
 }
 
-func testExecuteKubectlOperation(client *mockKubectlClient, operation string, manifestFiles []string) error {
+func testExecuteKubectlOperation(ctx context.Context, client *mockKubectlClient, operation string, manifestFiles []string) error {
 	operations := map[string]func(context.Context, []string) error{
 		"apply":           client.ApplyDynamic,
 		"delete":          client.DeleteDynamic,
@@ -49,7 +49,7 @@ func testExecuteKubectlOperation(client *mockKubectlClient, operation string, ma
 		return fmt.Errorf("unsupported operation: %s", operation)
 	}
 
-	if err := operationFunc(context.Background(), manifestFiles); err != nil {
+	if err := operationFunc(ctx, manifestFiles); err != nil {
 		return fmt.Errorf("failed to execute kubectl %s command: %w", operation, err)
 	}
 
@@ -67,7 +67,7 @@ func TestExecuteKubectlOperation_Apply_Success(t *testing.T) {
 	}
 
 	manifests := []string{"manifest1.yaml", "manifest2.yaml"}
-	err := testExecuteKubectlOperation(mockClient, "apply", manifests)
+	err := testExecuteKubectlOperation(t.Context(), mockClient, "apply", manifests)
 
 	require.NoError(t, err)
 	assert.True(t, called)
@@ -85,7 +85,7 @@ func TestExecuteKubectlOperation_Apply_Error(t *testing.T) {
 	}
 
 	manifests := []string{"error.yaml"}
-	err := testExecuteKubectlOperation(mockClient, "apply", manifests)
+	err := testExecuteKubectlOperation(t.Context(), mockClient, "apply", manifests)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), expectedErr.Error())
@@ -103,7 +103,7 @@ func TestExecuteKubectlOperation_Delete_Success(t *testing.T) {
 	}
 
 	manifests := []string{"manifest1.yaml"}
-	err := testExecuteKubectlOperation(mockClient, "delete", manifests)
+	err := testExecuteKubectlOperation(t.Context(), mockClient, "delete", manifests)
 
 	require.NoError(t, err)
 	assert.True(t, called)
@@ -121,7 +121,7 @@ func TestExecuteKubectlOperation_Delete_Error(t *testing.T) {
 	}
 
 	manifests := []string{"error.yaml"}
-	err := testExecuteKubectlOperation(mockClient, "delete", manifests)
+	err := testExecuteKubectlOperation(t.Context(), mockClient, "delete", manifests)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), expectedErr.Error())
@@ -139,7 +139,7 @@ func TestExecuteKubectlOperation_RolloutRestart_Success(t *testing.T) {
 	}
 
 	resources := []string{"deployment/nginx"}
-	err := testExecuteKubectlOperation(mockClient, "rollout-restart", resources)
+	err := testExecuteKubectlOperation(t.Context(), mockClient, "rollout-restart", resources)
 
 	require.NoError(t, err)
 	assert.True(t, called)
@@ -157,7 +157,7 @@ func TestExecuteKubectlOperation_RolloutRestart_Error(t *testing.T) {
 	}
 
 	resources := []string{"deployment/error"}
-	err := testExecuteKubectlOperation(mockClient, "rollout-restart", resources)
+	err := testExecuteKubectlOperation(t.Context(), mockClient, "rollout-restart", resources)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), expectedErr.Error())
@@ -167,7 +167,7 @@ func TestExecuteKubectlOperation_RolloutRestart_Error(t *testing.T) {
 func TestExecuteKubectlOperation_UnsupportedOperation(t *testing.T) {
 	mockClient := &mockKubectlClient{}
 
-	err := testExecuteKubectlOperation(mockClient, "unsupported", []string{})
+	err := testExecuteKubectlOperation(t.Context(), mockClient, "unsupported", []string{})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported operation")

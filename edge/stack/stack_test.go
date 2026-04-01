@@ -53,11 +53,10 @@ func TestStackManager_pullImages(t *testing.T) {
 			},
 		}
 
-		ctx := context.Background()
 		stackName := "my-stack"
 		stackFileLocation := "/path/to/stack/stack.yml"
 
-		mockDeployer.EXPECT().Pull(ctx, stackName, []string{stackFileLocation}, deployer.PullOptions{
+		mockDeployer.EXPECT().Pull(t.Context(), stackName, []string{stackFileLocation}, deployer.PullOptions{
 			DeployerBaseOptions: deployer.DeployerBaseOptions{
 				WorkingDir: stack.FileFolder,
 				Env:        buildEnvVarsForDeployer(stack.EnvVars),
@@ -66,7 +65,7 @@ func TestStackManager_pullImages(t *testing.T) {
 
 		mockPortainerClient.EXPECT().SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusImagesPulled, stack.RollbackTo, "").Return(nil)
 
-		err := manager.pullImages(ctx, stack, stackName, stackFileLocation)
+		err := manager.pullImages(t.Context(), stack, stackName, stackFileLocation)
 		require.NoError(t, err)
 		assert.True(t, stack.PullFinished)
 		assert.Equal(t, StatusDeploying, stack.Status)
@@ -83,18 +82,17 @@ func TestStackManager_pullImages(t *testing.T) {
 			},
 		}
 
-		ctx := context.Background()
 		stackName := "my-stack"
 		stackFileLocation := "/path/to/stack/stack.yml"
 
-		mockDeployer.EXPECT().Pull(ctx, stackName, []string{stackFileLocation}, deployer.PullOptions{
+		mockDeployer.EXPECT().Pull(t.Context(), stackName, []string{stackFileLocation}, deployer.PullOptions{
 			DeployerBaseOptions: deployer.DeployerBaseOptions{
 				WorkingDir: stack.FileFolder,
 				Env:        buildEnvVarsForDeployer(stack.EnvVars),
 			},
 		}).Return(errors.New("pull failed"))
 
-		err := manager.pullImages(ctx, stack, stackName, stackFileLocation)
+		err := manager.pullImages(t.Context(), stack, stackName, stackFileLocation)
 		require.Error(t, err)
 		assert.False(t, stack.PullFinished)
 		assert.Equal(t, StatusRetry, stack.Status)
@@ -109,13 +107,12 @@ func TestStackManager_pullImages(t *testing.T) {
 			StackPayload: edge.StackPayload{},
 		}
 
-		ctx := context.Background()
 		stackName := "my-stack"
 		stackFileLocation := "/path/to/stack/stack.yml"
 
 		stack.PullCount = perHourRetries + 1
 
-		err := manager.pullImages(ctx, stack, stackName, stackFileLocation)
+		err := manager.pullImages(t.Context(), stack, stackName, stackFileLocation)
 		require.NoError(t, err)
 		assert.False(t, stack.PullFinished)
 		assert.Equal(t, StatusPending, stack.Status)
@@ -135,7 +132,6 @@ func TestStackManager_deployStack(t *testing.T) {
 	}
 
 	t.Run("Deploy stack successfully", func(t *testing.T) {
-		ctx := context.Background()
 		stack := &edgeStack{
 			DeployCount: 0,
 			Status:      StatusPending,
@@ -156,7 +152,7 @@ func TestStackManager_deployStack(t *testing.T) {
 		appLabels := buildK8sAppLabels(stack)
 
 		mockPortainerClient.EXPECT().SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusDeploying, stack.RollbackTo, "").Return(nil)
-		mockDeployer.EXPECT().Deploy(ctx, stackName, []string{stackFileLocation}, deployer.DeployOptions{
+		mockDeployer.EXPECT().Deploy(t.Context(), stackName, []string{stackFileLocation}, deployer.DeployOptions{
 			EdgeStackID: portainer.EdgeStackID(stack.ID),
 			DeployerBaseOptions: deployer.DeployerBaseOptions{
 				Namespace:  stack.Namespace,
@@ -167,14 +163,13 @@ func TestStackManager_deployStack(t *testing.T) {
 		}).Return(nil)
 		mockPortainerClient.EXPECT().SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusDeploymentReceived, stack.RollbackTo, "").Return(nil)
 
-		manager.deployStack(ctx, stack, stackName, stackFileLocation)
+		manager.deployStack(t.Context(), stack, stackName, stackFileLocation)
 
 		assert.Equal(t, StatusAwaitingDeployedStatus, stack.Status)
 		assert.Equal(t, actionIdle, stack.Action)
 	})
 
 	t.Run("Deploy stack failed with retries", func(t *testing.T) {
-		ctx := context.Background()
 		stack := &edgeStack{
 			DeployCount: 0,
 			Status:      StatusPending,
@@ -195,7 +190,7 @@ func TestStackManager_deployStack(t *testing.T) {
 		appLabels := buildK8sAppLabels(stack)
 
 		mockPortainerClient.EXPECT().SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusDeploying, stack.RollbackTo, "").Return(nil)
-		mockDeployer.EXPECT().Deploy(ctx, stackName, []string{stackFileLocation}, deployer.DeployOptions{
+		mockDeployer.EXPECT().Deploy(t.Context(), stackName, []string{stackFileLocation}, deployer.DeployOptions{
 			EdgeStackID: portainer.EdgeStackID(stack.ID),
 			DeployerBaseOptions: deployer.DeployerBaseOptions{
 				Namespace:  stack.Namespace,
@@ -205,14 +200,13 @@ func TestStackManager_deployStack(t *testing.T) {
 			HelmAppLabels: appLabels.ToMap(),
 		}).Return(errors.New("deploy failed"))
 
-		manager.deployStack(ctx, stack, stackName, stackFileLocation)
+		manager.deployStack(t.Context(), stack, stackName, stackFileLocation)
 
 		assert.Equal(t, StatusRetry, stack.Status)
 		assert.Equal(t, actionIdle, stack.Action)
 	})
 
 	t.Run("Deploy stack failed without retries", func(t *testing.T) {
-		ctx := context.Background()
 		stack := &edgeStack{
 			DeployCount: 0,
 			Status:      StatusPending,
@@ -233,7 +227,7 @@ func TestStackManager_deployStack(t *testing.T) {
 		appLabels := buildK8sAppLabels(stack)
 
 		mockPortainerClient.EXPECT().SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusDeploying, stack.RollbackTo, "").Return(nil)
-		mockDeployer.EXPECT().Deploy(ctx, stackName, []string{stackFileLocation}, deployer.DeployOptions{
+		mockDeployer.EXPECT().Deploy(t.Context(), stackName, []string{stackFileLocation}, deployer.DeployOptions{
 			EdgeStackID: portainer.EdgeStackID(stack.ID),
 			DeployerBaseOptions: deployer.DeployerBaseOptions{
 				Namespace:  stack.Namespace,
@@ -244,7 +238,7 @@ func TestStackManager_deployStack(t *testing.T) {
 		}).Return(errors.New("deploy failed"))
 		mockPortainerClient.EXPECT().SetEdgeStackStatus(stack.ID, stack.Version, portainer.EdgeStackStatusError, stack.RollbackTo, "failed to redeploy stack: deploy failed").Return(nil)
 
-		manager.deployStack(ctx, stack, stackName, stackFileLocation)
+		manager.deployStack(t.Context(), stack, stackName, stackFileLocation)
 
 		assert.Equal(t, StatusError, stack.Status)
 		assert.Equal(t, actionIdle, stack.Action)
@@ -402,14 +396,12 @@ func TestStackManager_checkStackStatus(t *testing.T) {
 					EdgeUpdateID: tt.edgeUpdateID,
 				},
 			}
-			ctx := context.Background()
-
 			mockDeployer.EXPECT().WaitForStatus(gomock.Any(), stack.Name, tt.expectedRequiredLibStackStatus, deployer.CheckStatusOptions{}).Return(tt.expectedWaitResult)
 			if tt.expectedPortainerStatus >= 0 {
 				mockPortainerClient.EXPECT().SetEdgeStackStatus(stack.ID, stack.Version, tt.expectedPortainerStatus, stack.RollbackTo, tt.expectedWaitResult.ErrorMsg).Return(nil)
 			}
 
-			err := manager.checkStackStatus(ctx, stack.Name, stack, deployer.CheckStatusOptions{})
+			err := manager.checkStackStatus(t.Context(), stack.Name, stack, deployer.CheckStatusOptions{})
 
 			require.NoError(t, err)
 			assert.Equal(t, tt.expectedEdgeStackStatus, stack.Status)

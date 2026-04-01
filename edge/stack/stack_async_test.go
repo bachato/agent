@@ -1,7 +1,6 @@
 package stack
 
 import (
-	"context"
 	"encoding/base64"
 	"math/rand/v2"
 	"os"
@@ -33,7 +32,7 @@ func TestPortainerEdgeIDEnvVarPresent(t *testing.T) {
 		EntryFileName: "docker-compose.yml",
 	}
 
-	err := sm.DeployStack(context.Background(), stackPayload)
+	err := sm.DeployStack(t.Context(), stackPayload)
 	require.NoError(t, err)
 
 	edgeStack, ok := sm.stacks[edgeStackID(stackID)]
