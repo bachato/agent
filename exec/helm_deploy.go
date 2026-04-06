@@ -77,14 +77,12 @@ func (d *HelmDeployer) Deploy(ctx context.Context, name string, filePaths []stri
 
 	// Merge values from all values files
 	var mergedValues map[string]any
-	if len(absoluteValuesFiles) > 0 {
-		for _, valuesFile := range absoluteValuesFiles {
-			values, err := sdk.GetHelmValuesFromFile(valuesFile)
-			if err != nil {
-				return fmt.Errorf("failed to read values file %s: %w", valuesFile, err)
-			}
-			mergedValues = sdk.MergeValues(mergedValues, values)
+	for _, valuesFile := range absoluteValuesFiles {
+		values, err := sdk.GetHelmValuesFromFile(valuesFile)
+		if err != nil {
+			return fmt.Errorf("failed to read values file %s: %w", valuesFile, err)
 		}
+		mergedValues = sdk.MergeValues(mergedValues, values)
 	}
 
 	// Parse timeout duration from config or use default
