@@ -12,13 +12,15 @@ import (
 	"github.com/portainer/agent/kubernetes"
 	"github.com/portainer/portainer/pkg/libhelm/options"
 	"github.com/portainer/portainer/pkg/libhelm/sdk"
+	helmtypes "github.com/portainer/portainer/pkg/libhelm/types"
 	"github.com/rs/zerolog/log"
 	"k8s.io/client-go/rest"
+	sigsyaml "sigs.k8s.io/yaml"
 )
 
 // HelmDeployer implements the Deployer interface for Helm chart deployments
 type HelmDeployer struct {
-	helmManager *sdk.HelmSDKPackageManager
+	helmManager helmtypes.HelmPackageManager
 	kubeClient  *kubernetes.KubeClient
 }
 
@@ -28,6 +30,11 @@ func NewHelmDeployer(kubeClient *kubernetes.KubeClient) *HelmDeployer {
 		helmManager: sdk.NewHelmSDKPackageManager(),
 		kubeClient:  kubeClient,
 	}
+}
+
+// newHelmDeployerWithManager creates a HelmDeployer with a custom manager (for testing)
+func newHelmDeployerWithManager(manager helmtypes.HelmPackageManager, kubeClient *kubernetes.KubeClient) *HelmDeployer {
+	return &HelmDeployer{helmManager: manager, kubeClient: kubeClient}
 }
 
 // Deploy deploys a Helm chart using the Helm SDK
@@ -45,45 +52,19 @@ func (d *HelmDeployer) Deploy(ctx context.Context, name string, filePaths []stri
 		return fmt.Errorf("failed to parse Helm configuration: %w", err)
 	}
 
-	// Validate required fields
-	if helmConfig.ChartPath == "" {
-		return errors.New("helm chart path is required")
+	if helmConfig.ChartPath == "" && helmConfig.RepoURL == "" {
+		return errors.New("either a helm chart path (for git deployments) or a repository URL (for helm repository deployments) is required")
+	}
+
+	if helmConfig.ChartPath != "" && helmConfig.RepoURL != "" {
+		return errors.New("cannot specify both a helm chart path and a repository URL in the same deployment configuration")
+	}
+
+	if helmConfig.RepoURL != "" && helmConfig.ChartName == "" {
+		return errors.New("helm chart name is required when using a repository URL")
 	}
 
 	releaseName := convertStackNameToReleaseName(name)
-
-	// Resolve the absolute chart path
-	absoluteChartPath, err := d.resolveChartPath(helmConfig.ChartPath, deployOpts.WorkingDir)
-	if err != nil {
-		return fmt.Errorf("failed to resolve chart path: %w", err)
-	}
-
-	log.Debug().
-		Str("context", "HelmDeployer").
-		Str("relative_chart_path", helmConfig.ChartPath).
-		Str("absolute_chart_path", absoluteChartPath).
-		Str("working_dir", deployOpts.WorkingDir).
-		Msg("resolved chart path")
-
-	// Resolve absolute paths for values files
-	absoluteValuesFiles := make([]string, 0, len(helmConfig.ValuesFiles))
-	for _, valuesFile := range helmConfig.ValuesFiles {
-		absoluteValuesPath, err := d.resolveChartPath(valuesFile, deployOpts.WorkingDir)
-		if err != nil {
-			return fmt.Errorf("failed to resolve values file path %s: %w", valuesFile, err)
-		}
-		absoluteValuesFiles = append(absoluteValuesFiles, absoluteValuesPath)
-	}
-
-	// Merge values from all values files
-	var mergedValues map[string]any
-	for _, valuesFile := range absoluteValuesFiles {
-		values, err := sdk.GetHelmValuesFromFile(valuesFile)
-		if err != nil {
-			return fmt.Errorf("failed to read values file %s: %w", valuesFile, err)
-		}
-		mergedValues = sdk.MergeValues(mergedValues, values)
-	}
 
 	// Parse timeout duration from config or use default
 	timeout := 300 * time.Second // Default timeout: 5 minutes
@@ -101,17 +82,14 @@ func (d *HelmDeployer) Deploy(ctx context.Context, name string, filePaths []stri
 	}
 
 	// Prepare install options for Helm SDK
-	installOpts := options.InstallOptions{
-		Name:                    releaseName,
-		Namespace:               deployOpts.Namespace,
-		Chart:                   absoluteChartPath,
-		Values:                  mergedValues,
-		Wait:                    true,
-		Timeout:                 timeout,
-		CreateNamespace:         true,
-		Atomic:                  helmConfig.Atomic,
-		KubernetesClusterAccess: d.getKubeAccess(),
-		HelmAppLabels:           deployOpts.HelmAppLabels,
+	var installOpts options.InstallOptions
+	if helmConfig.ChartPath != "" {
+		installOpts, err = d.buildInstallOptsForGitRepo(releaseName, deployOpts, helmConfig, timeout)
+	} else {
+		installOpts, err = d.buildInstallOptsForHelmRepo(releaseName, deployOpts, helmConfig, timeout)
+	}
+	if err != nil {
+		return err
 	}
 
 	// Use helm upgrade --install pattern (idempotent)
@@ -138,6 +116,79 @@ func (d *HelmDeployer) Deploy(ctx context.Context, name string, filePaths []stri
 	}
 
 	return nil
+}
+
+// buildInstallOptsForGitRepo builds InstallOptions for a git-based deployment.
+// Chart files are already on disk after git clone; this resolves paths and merges values files.
+func (d *HelmDeployer) buildInstallOptsForGitRepo(releaseName string, deployOpts deployer.DeployOptions, helmConfig *helmConfig, timeout time.Duration) (options.InstallOptions, error) {
+	absoluteChartPath, err := d.resolveChartPath(helmConfig.ChartPath, deployOpts.WorkingDir)
+	if err != nil {
+		return options.InstallOptions{}, fmt.Errorf("failed to resolve chart path: %w", err)
+	}
+
+	log.Debug().
+		Str("context", "HelmDeployer").
+		Str("relative_chart_path", helmConfig.ChartPath).
+		Str("absolute_chart_path", absoluteChartPath).
+		Str("working_dir", deployOpts.WorkingDir).
+		Msg("resolved chart path")
+
+	absoluteValuesFiles := make([]string, 0, len(helmConfig.ValuesFiles))
+	for _, valuesFile := range helmConfig.ValuesFiles {
+		absoluteValuesPath, err := d.resolveChartPath(valuesFile, deployOpts.WorkingDir)
+		if err != nil {
+			return options.InstallOptions{}, fmt.Errorf("failed to resolve values file path %s: %w", valuesFile, err)
+		}
+		absoluteValuesFiles = append(absoluteValuesFiles, absoluteValuesPath)
+	}
+
+	var mergedValues map[string]any
+	for _, valuesFile := range absoluteValuesFiles {
+		values, err := sdk.GetHelmValuesFromFile(valuesFile)
+		if err != nil {
+			return options.InstallOptions{}, fmt.Errorf("failed to read values file %s: %w", valuesFile, err)
+		}
+		mergedValues = sdk.MergeValues(mergedValues, values)
+	}
+
+	return options.InstallOptions{
+		Name:                    releaseName,
+		Namespace:               deployOpts.Namespace,
+		Chart:                   absoluteChartPath,
+		Values:                  mergedValues,
+		Wait:                    true,
+		Timeout:                 timeout,
+		CreateNamespace:         true,
+		Atomic:                  helmConfig.Atomic,
+		KubernetesClusterAccess: d.getKubeAccess(),
+		HelmAppLabels:           deployOpts.HelmAppLabels,
+	}, nil
+}
+
+// buildInstallOptsForHelmRepo builds InstallOptions for a helm-repository-based deployment.
+// The chart is fetched directly from the remote repository during install/upgrade.
+func (d *HelmDeployer) buildInstallOptsForHelmRepo(releaseName string, deployOpts deployer.DeployOptions, helmConfig *helmConfig, timeout time.Duration) (options.InstallOptions, error) {
+	var inlineValues map[string]any
+	if helmConfig.ValuesInline != "" {
+		if err := sigsyaml.Unmarshal([]byte(helmConfig.ValuesInline), &inlineValues); err != nil {
+			return options.InstallOptions{}, fmt.Errorf("failed to parse inline values YAML: %w", err)
+		}
+	}
+
+	return options.InstallOptions{
+		Name:                    releaseName,
+		Namespace:               deployOpts.Namespace,
+		Repo:                    helmConfig.RepoURL,
+		Chart:                   helmConfig.ChartName,
+		Version:                 helmConfig.ChartVersion,
+		Values:                  inlineValues,
+		Wait:                    true,
+		Timeout:                 timeout,
+		CreateNamespace:         true,
+		Atomic:                  helmConfig.Atomic,
+		KubernetesClusterAccess: d.getKubeAccess(),
+		HelmAppLabels:           deployOpts.HelmAppLabels,
+	}, nil
 }
 
 // Remove removes a Helm release
@@ -184,13 +235,22 @@ func (d *HelmDeployer) Validate(ctx context.Context, name string, filePaths []st
 		return fmt.Errorf("failed to parse Helm configuration: %w", err)
 	}
 
-	if helmConfig.ChartPath == "" {
-		return errors.New("helm chart path is required")
+	if helmConfig.ChartPath == "" && helmConfig.RepoURL == "" {
+		return errors.New("either a helm chart path (for git deployments) or a repository URL (for helm repository deployments) is required")
+	}
+
+	if helmConfig.ChartPath != "" && helmConfig.RepoURL != "" {
+		return errors.New("cannot specify both a helm chart path and a repository URL in the same deployment configuration")
+	}
+
+	if helmConfig.RepoURL != "" && helmConfig.ChartName == "" {
+		return errors.New("helm chart name is required when using a repository URL")
 	}
 
 	log.Debug().
 		Str("context", "HelmDeployer").
 		Str("chart_path", helmConfig.ChartPath).
+		Str("repo_url", helmConfig.RepoURL).
 		Int("values_files_count", len(helmConfig.ValuesFiles)).
 		Msg("Helm chart configuration validated")
 
@@ -243,10 +303,17 @@ func (d *HelmDeployer) getKubeAccess() *options.KubernetesClusterAccess {
 
 // helmConfig holds parsed Helm configuration
 type helmConfig struct {
+	// Git-based deployment: path to chart inside cloned repository
 	ChartPath   string
 	ValuesFiles []string
-	Atomic      bool
-	Timeout     string
+	// Repository-based deployment: fetch chart directly from a Helm repository
+	RepoURL      string
+	ChartName    string
+	ChartVersion string
+	ValuesInline string
+	// Shared
+	Atomic  bool
+	Timeout string
 }
 
 // parseHelmConfig extracts Helm configuration from DeployOptions
@@ -274,15 +341,21 @@ func (d *HelmDeployer) parseHelmConfigFromBase(baseOpts deployer.DeployerBaseOpt
 		case "HELM_CHART_PATH":
 			config.ChartPath = value
 		case "HELM_VALUES_FILES":
-			// Values files are passed as comma-separated list
+			// Values files are passed as pipe-separated list
 			if value != "" {
-				config.ValuesFiles = strings.Split(value, ",")
+				config.ValuesFiles = strings.Split(value, "|")
 			}
+		case "HELM_REPO_URL":
+			config.RepoURL = value
+		case "HELM_CHART_NAME":
+			config.ChartName = value
+		case "HELM_CHART_VERSION":
+			config.ChartVersion = value
+		case "HELM_VALUES_INLINE":
+			config.ValuesInline = value
 		case "HELM_ATOMIC":
-			// Parse atomic flag (enables automatic rollback on failure)
 			config.Atomic = value == "true" || value == "1"
 		case "HELM_TIMEOUT":
-			// Parse timeout for Helm operations (e.g., "5m0s", "10m", "1h30m")
 			config.Timeout = value
 		}
 	}
@@ -291,6 +364,9 @@ func (d *HelmDeployer) parseHelmConfigFromBase(baseOpts deployer.DeployerBaseOpt
 		Str("context", "HelmDeployer").
 		Str("chart_path", config.ChartPath).
 		Int("values_files_count", len(config.ValuesFiles)).
+		Str("repo_url", config.RepoURL).
+		Str("chart_name", config.ChartName).
+		Str("chart_version", config.ChartVersion).
 		Bool("atomic", config.Atomic).
 		Str("timeout", config.Timeout).
 		Msg("parsed Helm configuration")

@@ -120,7 +120,7 @@ func (manager *StackManager) buildDeployerParams(stackPayload edge.StackPayload,
 		return err
 	}
 
-	if !IsHelmDeploymentStack(stack) {
+	if !IsHelmStack(stack) {
 		log.Debug().
 			Str("entry_file_name", stackPayload.EntryFileName).
 			Str("file_folder", stack.FileFolder).

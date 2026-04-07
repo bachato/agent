@@ -35,10 +35,10 @@ func NewKubernetesDeployer(kubeClient *kubernetes.KubeClient) *KubernetesDeploye
 }
 
 // isHelmDeployment checks if the deployment is a Helm deployment
-// by looking for the HELM_CHART_PATH environment variable
+// by looking for the HELM_CHART_PATH (git-based) or HELM_REPO_URL (repo-based) environment variable
 func isHelmDeployment(env []string) bool {
 	for _, e := range env {
-		if strings.HasPrefix(e, "HELM_CHART_PATH=") {
+		if strings.HasPrefix(e, "HELM_CHART_PATH=") || strings.HasPrefix(e, "HELM_REPO_URL=") {
 			return true
 		}
 	}

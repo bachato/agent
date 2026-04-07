@@ -76,7 +76,7 @@ func buildK8sAppLabels(stack *edgeStack) kubernetes.KubeAppLabels {
 
 // shouldApplyK8sLabels returns true if K8s labels should be applied to this stack
 func (manager *StackManager) shouldApplyK8sLabels(stack *edgeStack) bool {
-	return manager.engineType == EngineTypeKubernetes && !IsHelmDeploymentStack(stack)
+	return manager.engineType == EngineTypeKubernetes && !IsHelmStack(stack)
 }
 
 // applyK8sLabelsIfNeeded applies Kubernetes labels to the manifest if this is a Kubernetes stack. It modifies the dirEntries in-place by updating the manifest file content with labels. This doesn't apply to Helm stack.

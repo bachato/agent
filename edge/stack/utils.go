@@ -31,7 +31,7 @@ func backupSuccessStack(stack *edgeStack) error {
 func getStackFileFolder(stack *edgeStack) string {
 	stackIDStr := strconv.Itoa(stack.ID)
 
-	if IsHelmDeploymentStack(stack) {
+	if IsHelmStack(stack) {
 		return filepath.Join(agent.EdgeStackFilesPath, stackIDStr)
 	}
 
@@ -45,6 +45,18 @@ func getStackFileFolder(stack *edgeStack) string {
 	return folder
 }
 
-func IsHelmDeploymentStack(stack *edgeStack) bool {
+// IsHelmStack reports whether the stack is any kind of helm stack
+// (either helm repository or git repository helm).
+func IsHelmStack(stack *edgeStack) bool {
+	return IsHelmRepoStack(stack) || IsGitRepoHelmStack(stack)
+}
+
+// IsHelmRepoStack reports whether the stack is a helm repository stack
+func IsHelmRepoStack(stack *edgeStack) bool {
+	return stack.HelmConfig.ChartURL != ""
+}
+
+// IsGitRepoHelmStack reports whether the stack is a git repository helm stack
+func IsGitRepoHelmStack(stack *edgeStack) bool {
 	return stack.HelmConfig.ChartPath != ""
 }

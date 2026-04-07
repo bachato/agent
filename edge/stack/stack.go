@@ -164,7 +164,7 @@ func (manager *StackManager) processStack(stackID int, stackStatus client.StackS
 		return err
 	}
 
-	if !IsHelmDeploymentStack(stack) {
+	if !IsHelmStack(stack) {
 		log.Debug().
 			Str("entry_file_name", stackPayload.EntryFileName).
 			Str("file_folder", stack.FileFolder).
@@ -260,8 +260,10 @@ func (manager *StackManager) performActionOnStack() {
 			},
 		}
 
-		if IsHelmDeploymentStack(stack) {
+		if IsGitRepoHelmStack(stack) {
 			checkStatusOptions.Env = append(checkStatusOptions.Env, "HELM_CHART_PATH="+stack.HelmConfig.ChartPath)
+		} else if IsHelmRepoStack(stack) {
+			checkStatusOptions.Env = append(checkStatusOptions.Env, "HELM_REPO_URL="+stack.HelmConfig.ChartURL)
 		}
 		if err := manager.checkStackStatus(ctx, stackName, stack, checkStatusOptions); err != nil {
 			log.Error().Err(err).Msg("unable to check Edge stack status")
@@ -289,7 +291,7 @@ func (manager *StackManager) performActionOnStack() {
 		// this process, so changes to the bind source may not be reflected in the container.
 		// Therefore, this operation should only be performed if the stack is new
 		// or the AlwaysCloneGitRepoForRelativePath flag is set to true.
-		if !IsHelmDeploymentStack(stack) && IsRelativePathStack(stack) && (stack.Action == actionDeploy || stack.AlwaysCloneGitRepoForRelativePath) {
+		if !IsHelmStack(stack) && IsRelativePathStack(stack) && (stack.Action == actionDeploy || stack.AlwaysCloneGitRepoForRelativePath) {
 			dst := filepath.Join(stack.FilesystemPath, agent.ComposePathPrefix)
 
 			if err := docker.CopyGitStackToHost(stack.FileFolder, dst, stack.ID, stackName, manager.assetsPath); err != nil {
@@ -702,7 +704,7 @@ func (manager *StackManager) cleanupStack(stack *edgeStack, stackName string) {
 	}
 
 	// Remove git folder
-	if !IsHelmDeploymentStack(stack) && IsRelativePathStack(stack) {
+	if !IsHelmStack(stack) && IsRelativePathStack(stack) {
 		dst := filepath.Join(stack.FilesystemPath, agent.ComposePathPrefix)
 
 		if err := docker.RemoveGitStackFromHost(stack.FileFolder, dst, stack.ID, stackName); err != nil {
