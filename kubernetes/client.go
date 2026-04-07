@@ -27,6 +27,7 @@ type KubeClient struct {
 	cli *kubernetes.Clientset
 	// dynamicCli enables access to arbitrary resources (including CRDs)
 	dynamicCli dynamic.Interface
+	config     *rest.Config
 }
 
 // NewKubeClient returns a pointer to a new KubeClient instance
@@ -51,6 +52,7 @@ func NewKubeClient() (*KubeClient, error) {
 
 	kubeCli.cli = cli
 	kubeCli.dynamicCli = dynamicCli
+	kubeCli.config = config
 	return kubeCli, nil
 }
 
@@ -85,31 +87,37 @@ func BuildLocalClient() (*kubernetes.Clientset, error) {
 	return kubernetes.NewForConfig(config)
 }
 
-// StartExecProcess will start an exec process inside a container located inside a pod inside a specific namespace
-// using the specified command. The stdin parameter will be bound to the stdin process and the stdout process will write
-// to the stdout parameter.
-// This function only works against a local endpoint using an in-cluster config.
-func (kcl *KubeClient) StartExecProcess(token, namespace, podName, containerName string, command []string, stdin io.Reader, stdout io.Writer) error {
-	config, err := rest.InClusterConfig()
-	if err != nil {
-		return err
-	}
+// ExecProcessParams holds parameters for StartExecProcess.
+type ExecProcessParams struct {
+	Token         string
+	Namespace     string
+	PodName       string
+	ContainerName string
+	Command       []string
+	Stdin         io.Reader                       // bound to the exec process stdin
+	Stdout        io.Writer                       // receives exec process output
+	ResizeQueue   remotecommand.TerminalSizeQueue // nil if resize not needed
+}
 
-	if token != "" {
-		config.BearerToken = token
+// StartExecProcess starts an exec process inside a container.
+func (kcl *KubeClient) StartExecProcess(params ExecProcessParams) error {
+	config := rest.CopyConfig(kcl.config)
+
+	if params.Token != "" {
+		config.BearerToken = params.Token
 		config.BearerTokenFile = ""
 	}
 
 	req := kcl.cli.CoreV1().RESTClient().
 		Post().
 		Resource("pods").
-		Name(podName).
-		Namespace(namespace).
+		Name(params.PodName).
+		Namespace(params.Namespace).
 		SubResource("exec")
 
 	req.VersionedParams(&corev1.PodExecOptions{
-		Container: containerName,
-		Command:   command,
+		Container: params.ContainerName,
+		Command:   params.Command,
 		Stdin:     true,
 		Stdout:    true,
 		Stderr:    true,
@@ -122,9 +130,10 @@ func (kcl *KubeClient) StartExecProcess(token, namespace, podName, containerName
 	}
 
 	err = exec.Stream(remotecommand.StreamOptions{
-		Stdin:  stdin,
-		Stdout: stdout,
-		Tty:    true,
+		Stdin:             params.Stdin,
+		Stdout:            params.Stdout,
+		Tty:               true,
+		TerminalSizeQueue: params.ResizeQueue,
 	})
 	if err != nil {
 		var exitError utilexec.ExitError

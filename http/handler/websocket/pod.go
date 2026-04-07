@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/portainer/agent"
+	"github.com/portainer/agent/kubernetes"
+	kubecli "github.com/portainer/portainer/api/kubernetes/cli"
 	"github.com/portainer/portainer/api/logs"
 	"github.com/portainer/portainer/api/ws"
 	httperror "github.com/portainer/portainer/pkg/libhttp/error"
@@ -52,10 +54,22 @@ func (handler *Handler) websocketPodExec(w http.ResponseWriter, r *http.Request)
 	defer logs.CloseAndLogErr(stdoutWriter)
 
 	errorChan := make(chan error, 2)
-	go ws.StreamFromWebsocketToWriter(websocketConn, stdinWriter, errorChan)
+
+	sizeQueue := kubecli.NewTerminalSizeQueue()
+	defer sizeQueue.Close()
+	go ws.StreamFromWebsocketToWriter(websocketConn, stdinWriter, errorChan, ws.ResizeHandler(sizeQueue))
 	go ws.StreamFromReaderToWebsocket(websocketConn, stdoutReader, errorChan)
 
-	err = handler.kubeClient.StartExecProcess(token, namespace, podName, containerName, commandArray, stdinReader, stdoutWriter)
+	err = handler.kubeClient.StartExecProcess(kubernetes.ExecProcessParams{
+		Token:         token,
+		Namespace:     namespace,
+		PodName:       podName,
+		ContainerName: containerName,
+		Command:       commandArray,
+		Stdin:         stdinReader,
+		Stdout:        stdoutWriter,
+		ResizeQueue:   sizeQueue,
+	})
 	if err != nil {
 		return httperror.InternalServerError("Unable to start exec process inside container", err)
 	}
@@ -67,3 +81,4 @@ func (handler *Handler) websocketPodExec(w http.ResponseWriter, r *http.Request)
 
 	return nil
 }
+
