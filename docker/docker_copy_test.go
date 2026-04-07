@@ -14,6 +14,7 @@ func init() {
 }
 
 func TestBuildRemoveDirCmd(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
 		name        string
 		src         string
@@ -60,6 +61,7 @@ func TestBuildRemoveDirCmd(t *testing.T) {
 }
 
 func TestCreateContainerConfig(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
 		name           string
 		cmd            []string

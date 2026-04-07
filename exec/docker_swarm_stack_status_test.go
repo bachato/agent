@@ -29,6 +29,7 @@ func ensureIntegrationTest(t *testing.T) {
 */
 
 func TestComposeProjectStatus(t *testing.T) {
+	t.Parallel()
 	ensureIntegrationTest(t)
 
 	testCases := []struct {

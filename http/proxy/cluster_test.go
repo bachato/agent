@@ -10,6 +10,7 @@ import (
 )
 
 func TestNewClusterProxy(t *testing.T) {
+	t.Parallel()
 	fips.InitFIPS(false)
 
 	proxy := NewClusterProxy(true)

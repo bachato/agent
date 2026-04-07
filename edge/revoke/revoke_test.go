@@ -141,6 +141,7 @@ func setup() *Service {
 }
 
 func TestRevoked(t *testing.T) {
+	t.Parallel()
 	service := setup()
 	if revoked, err := service.VerifyCertificate(revokedCert); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: soft fail checking revocation\n")
@@ -150,6 +151,7 @@ func TestRevoked(t *testing.T) {
 }
 
 func TestExpired(t *testing.T) {
+	t.Parallel()
 	service := setup()
 	if revoked, err := service.VerifyCertificate(expiredCert); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: soft fail checking revocation\n")
@@ -159,6 +161,7 @@ func TestExpired(t *testing.T) {
 }
 
 func TestGood(t *testing.T) {
+	t.Parallel()
 	service := setup()
 	if revoked, err := service.VerifyCertificate(goodCert); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: soft fail checking revocation\n")
@@ -169,6 +172,7 @@ func TestGood(t *testing.T) {
 }
 
 func TestLdap(t *testing.T) {
+	t.Parallel()
 	service := setup()
 	ldapCert := mustParse(goodComodoCA)
 	ldapCert.CRLDistributionPoints = append(ldapCert.CRLDistributionPoints, "ldap://myldap.example.com")
@@ -178,12 +182,14 @@ func TestLdap(t *testing.T) {
 }
 
 func TestLdapURLErr(t *testing.T) {
+	t.Parallel()
 	if ldapURL(":") {
 		t.Fatalf("bad url does not cause error")
 	}
 }
 
 func TestCertNotYetValid(t *testing.T) {
+	t.Parallel()
 	service := setup()
 	notReadyCert := expiredCert
 	notReadyCert.NotBefore = time.Date(3000, time.January, 1, 1, 1, 1, 1, time.Local)
@@ -194,6 +200,7 @@ func TestCertNotYetValid(t *testing.T) {
 }
 
 func TestCRLFetchError(t *testing.T) {
+	t.Parallel()
 	service := setup()
 	ldapCert := mustParse(goodComodoCA)
 	ldapCert.CRLDistributionPoints[0] = ""
@@ -209,6 +216,7 @@ func TestCRLFetchError(t *testing.T) {
 }
 
 func TestBadCRLSet(t *testing.T) {
+	t.Parallel()
 	service := setup()
 
 	ldapCert := mustParse(goodComodoCA)
@@ -233,6 +241,7 @@ func TestBadCRLSet(t *testing.T) {
 }
 
 func TestCachedCRLSet(t *testing.T) {
+	t.Parallel()
 	service := setup()
 	_, _ = service.VerifyCertificate(goodCert)
 	if revoked, err := service.VerifyCertificate(goodCert); err != nil || revoked {
@@ -241,6 +250,7 @@ func TestCachedCRLSet(t *testing.T) {
 }
 
 func TestRemoteFetchError(t *testing.T) {
+	t.Parallel()
 	service := setup()
 
 	badurl := ":"

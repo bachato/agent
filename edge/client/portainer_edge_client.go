@@ -22,8 +22,6 @@ import (
 
 const requestRetryWait = 5 * time.Second
 
-var requestRetrySleep = time.Sleep
-
 // PortainerEdgeClient is used to execute HTTP requests against the Portainer API
 type PortainerEdgeClient struct {
 	version         string
@@ -303,7 +301,7 @@ func (client *PortainerEdgeClient) SetEdgeStackStatus(
 				Int("edgeStackID", edgeStackID).
 				Msg("could not set edge stack status, retrying...")
 
-			requestRetrySleep(requestRetryWait)
+			time.Sleep(requestRetryWait)
 
 			continue
 		}
@@ -323,7 +321,7 @@ func (client *PortainerEdgeClient) SetEdgeStackStatus(
 			Int("edgeStackID", edgeStackID).
 			Msg("could not set edge stack status, retrying...")
 
-		requestRetrySleep(requestRetryWait)
+		time.Sleep(requestRetryWait)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -365,7 +363,7 @@ func (client *PortainerEdgeClient) UpdatePolicyChartStatuses(statuses []portaine
 				Err(err).
 				Msg("could not update policy chart statuses, retrying...")
 
-			requestRetrySleep(requestRetryWait)
+			time.Sleep(requestRetryWait)
 
 			continue
 		}
@@ -384,7 +382,7 @@ func (client *PortainerEdgeClient) UpdatePolicyChartStatuses(statuses []portaine
 			Str("status", resp.Status).
 			Msg("could not update policy chart statuses, retrying...")
 
-		requestRetrySleep(requestRetryWait)
+		time.Sleep(requestRetryWait)
 	}
 
 	if resp.StatusCode != http.StatusNoContent {

@@ -10,6 +10,7 @@ import (
 )
 
 func TestNewKubernetesProxy(t *testing.T) {
+	t.Parallel()
 	fips.InitFIPS(false)
 
 	proxy := NewKubernetesProxy()

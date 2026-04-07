@@ -31,6 +31,7 @@ import (
 )
 
 func TestStackManager_pullImages(t *testing.T) {
+	t.Parallel()
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -120,6 +121,7 @@ func TestStackManager_pullImages(t *testing.T) {
 }
 
 func TestStackManager_deployStack(t *testing.T) {
+	t.Parallel()
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -246,6 +248,7 @@ func TestStackManager_deployStack(t *testing.T) {
 }
 
 func TestStackManager_checkStackStatus(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name                           string
 		edgeUpdateID                   int
@@ -475,6 +478,7 @@ func setupStackManager(t *testing.T) *StackManager {
 }
 
 func TestStackManager_processStack_ForceRecreate(t *testing.T) {
+	t.Parallel()
 	t.Run("Force redeploy flag - should set ForceRecreate to true", func(t *testing.T) {
 		manager := setupStackManager(t)
 		stackStatus := client.StackStatus{Version: 1, ForceRedeploy: true}
@@ -503,6 +507,7 @@ func TestStackManager_processStack_ForceRecreate(t *testing.T) {
 }
 
 func TestResetForceRecreateStatus(t *testing.T) {
+	t.Parallel()
 	t.Run("ForceRecreate is true", func(t *testing.T) {
 		stack := &edgeStack{
 			StackPayload: edge.StackPayload{
@@ -615,6 +620,7 @@ func TestStackManager_performActionOnStack(t *testing.T) {
 }
 
 func TestStackManager_performActionOnStack_EdgeUpdateScenarios(t *testing.T) {
+	t.Parallel()
 	zerolog.SetGlobalLevel(zerolog.ErrorLevel)
 
 	tests := []struct {
@@ -728,6 +734,7 @@ func getContainerEnv(containerName string) map[string]string {
 }
 
 func TestAddRegistryToEntryFile_Docker(t *testing.T) {
+	t.Parallel()
 	manager := NewStackManager(nil, "", nil, "edge_id", nil)
 	manager.engineType = EngineTypeDockerStandalone // directly set to avoid deployer setup
 
@@ -783,6 +790,7 @@ services:
 }
 
 func TestEnsureRegCreds(t *testing.T) {
+	t.Parallel()
 	manager := setupStackManager(t)
 
 	t.Run("standard credentials get added", func(t *testing.T) {

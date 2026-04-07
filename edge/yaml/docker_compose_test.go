@@ -14,6 +14,7 @@ import (
 )
 
 func TestAddCredentialsAsEnvForSpecificService(t *testing.T) {
+	t.Parallel()
 	composeFileContent := `
 version: "3"
 services:
@@ -55,6 +56,7 @@ services:
 }
 
 func TestUpdateServiceWithEnv(t *testing.T) {
+	t.Parallel()
 	compose := Compose{
 		Version: "3",
 		Services: map[string]Service{
@@ -91,6 +93,7 @@ func TestUpdateServiceWithEnv(t *testing.T) {
 }
 
 func TestExtractRegistryServerUrl(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		imageName string
@@ -168,6 +171,7 @@ func TestExtractRegistryServerUrl(t *testing.T) {
 }
 
 func TestAddCredentialsAsEnvForSpecificService_InvalidYAML(t *testing.T) {
+	t.Parallel()
 	composeFileContent := `::: definitely not valid yaml :::`
 	dockerComposeYAML := NewDockerComposeYAML(composeFileContent, nil, nil)
 
@@ -178,6 +182,7 @@ func TestAddCredentialsAsEnvForSpecificService_InvalidYAML(t *testing.T) {
 }
 
 func TestAddCredentialsAsEnvForSpecificService_MissingVersion(t *testing.T) {
+	t.Parallel()
 	composeFileContent := `
 services:
   updater:
@@ -192,6 +197,7 @@ services:
 }
 
 func TestAddCredentialsAsEnvForSpecificService_NoServices(t *testing.T) {
+	t.Parallel()
 	// Version present, but no services key
 	composeFileContent := `
 version: "3"
@@ -205,6 +211,7 @@ version: "3"
 }
 
 func TestAddCredentialsAsEnvForSpecificService_ServiceNotFound(t *testing.T) {
+	t.Parallel()
 	// Service name requested does not exist
 	composeFileContent := `
 version: "3"
@@ -221,6 +228,7 @@ services:
 }
 
 func TestAddCredentialsAsEnvForSpecificService_EmptyImageName(t *testing.T) {
+	t.Parallel()
 	// Service present but image is empty -> extractRegistryServerUrl should error
 	composeFileContent := `
 version: "3"
@@ -237,6 +245,7 @@ services:
 }
 
 func TestAddCredentialsAsEnvForSpecificService_NoMatchingCredentials(t *testing.T) {
+	t.Parallel()
 	// Credentials provided but registry does not match service image -> should not error, just no env vars injected
 	composeFileContent := `
 version: "3"
@@ -266,6 +275,7 @@ services:
 }
 
 func TestUpdateServiceWithEnv_ServiceNotFound(t *testing.T) {
+	t.Parallel()
 	compose := Compose{
 		Version:  "3",
 		Services: map[string]Service{}, // empty map

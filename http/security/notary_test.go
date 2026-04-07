@@ -11,6 +11,7 @@ import (
 )
 
 func TestNotaryService(t *testing.T) {
+	t.Parallel()
 	fips.InitFIPS(false)
 
 	// Signature verification on
@@ -25,6 +26,7 @@ func TestNotaryService(t *testing.T) {
 }
 
 func TestNotaryServiceFIPS(t *testing.T) {
+	t.Parallel()
 	expectedStatusCode := http.StatusTeapot
 
 	handler := http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {

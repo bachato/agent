@@ -16,6 +16,7 @@ import (
 )
 
 func Test_executeAsyncRequestCompression(t *testing.T) {
+	t.Parallel()
 	fips.InitFIPS(false)
 
 	client := &PortainerAsyncClient{
@@ -64,6 +65,7 @@ func Test_executeAsyncRequestCompression(t *testing.T) {
 }
 
 func TestCommandPollingResiliency(t *testing.T) {
+	t.Parallel()
 	fips.InitFIPS(false)
 
 	cmdID := 1
@@ -162,6 +164,7 @@ func TestCommandPollingResiliency(t *testing.T) {
 }
 
 func TestIsDockerSnapshotDiffEmpty(t *testing.T) {
+	t.Parallel()
 	// Empty cases
 
 	emptyPatches := [][]jsondiff.Operation{

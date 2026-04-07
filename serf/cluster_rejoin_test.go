@@ -18,6 +18,7 @@ import (
 //  5. Workers reconnect to the manager — the rejoin loop stops only when a manager
 //     is visible as StatusAlive, not merely when any peer is contacted.
 func TestClusterService_SelfHealingRejoin(t *testing.T) {
+	t.Parallel()
 	// ── Phase 1: bring up the initial 3-node cluster ──────────────────────────
 
 	managerSerf, managerAddr, managerEventCh, managerCancel := createSerfNode(t, "manager", managerTags())
@@ -89,6 +90,7 @@ func TestClusterService_SelfHealingRejoin(t *testing.T) {
 // terminate just because workers can contact each other (n > 0 from cluster.Join).
 // The loop must only stop when GetMemberByRole(manager) returns non-nil.
 func TestClusterService_WorkersDoNotStopAtEachOther(t *testing.T) {
+	t.Parallel()
 	// Two workers, no manager yet.
 	worker1Serf, worker1Addr, _, _ := createSerfNode(t, "worker-1", workerTags())
 	_, worker2Addr, _, _ := createSerfNode(t, "worker-2", workerTags())
@@ -140,6 +142,7 @@ func TestClusterService_WorkersDoNotStopAtEachOther(t *testing.T) {
 // cleanly once a manager appears in the cluster via Serf (not DNS).
 // ".invalid" is an IANA-reserved TLD (RFC 2606) that must never resolve.
 func TestClusterService_RejoinLoopContinuesOnDNSFailure(t *testing.T) {
+	t.Parallel()
 	worker1Serf, worker1Addr, _, _ := createSerfNode(t, "worker-1", workerTags())
 
 	svc := &ClusterService{

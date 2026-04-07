@@ -8,6 +8,7 @@ import (
 )
 
 func TestPortainerHelper(t *testing.T) {
+	t.Parallel()
 	portainerHelper := portainerHelper{}
 
 	require.NoError(t, portainerHelper.Add(&credentials.Credentials{}))

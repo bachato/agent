@@ -57,6 +57,7 @@ func testExecuteKubectlOperation(ctx context.Context, client *mockKubectlClient,
 }
 
 func TestExecuteKubectlOperation_Apply_Success(t *testing.T) {
+	t.Parallel()
 	called := false
 	mockClient := &mockKubectlClient{
 		applyFunc: func(ctx context.Context, files []string) error {
@@ -74,6 +75,7 @@ func TestExecuteKubectlOperation_Apply_Success(t *testing.T) {
 }
 
 func TestExecuteKubectlOperation_Apply_Error(t *testing.T) {
+	t.Parallel()
 	expectedErr := errors.New("kubectl apply failed")
 	called := false
 	mockClient := &mockKubectlClient{
@@ -93,6 +95,7 @@ func TestExecuteKubectlOperation_Apply_Error(t *testing.T) {
 }
 
 func TestExecuteKubectlOperation_Delete_Success(t *testing.T) {
+	t.Parallel()
 	called := false
 	mockClient := &mockKubectlClient{
 		deleteFunc: func(ctx context.Context, files []string) error {
@@ -110,6 +113,7 @@ func TestExecuteKubectlOperation_Delete_Success(t *testing.T) {
 }
 
 func TestExecuteKubectlOperation_Delete_Error(t *testing.T) {
+	t.Parallel()
 	expectedErr := errors.New("kubectl delete failed")
 	called := false
 	mockClient := &mockKubectlClient{
@@ -129,6 +133,7 @@ func TestExecuteKubectlOperation_Delete_Error(t *testing.T) {
 }
 
 func TestExecuteKubectlOperation_RolloutRestart_Success(t *testing.T) {
+	t.Parallel()
 	called := false
 	mockClient := &mockKubectlClient{
 		rolloutRestartFunc: func(ctx context.Context, resources []string) error {
@@ -146,6 +151,7 @@ func TestExecuteKubectlOperation_RolloutRestart_Success(t *testing.T) {
 }
 
 func TestExecuteKubectlOperation_RolloutRestart_Error(t *testing.T) {
+	t.Parallel()
 	expectedErr := errors.New("kubectl rollout restart failed")
 	called := false
 	mockClient := &mockKubectlClient{
@@ -165,6 +171,7 @@ func TestExecuteKubectlOperation_RolloutRestart_Error(t *testing.T) {
 }
 
 func TestExecuteKubectlOperation_UnsupportedOperation(t *testing.T) {
+	t.Parallel()
 	mockClient := &mockKubectlClient{}
 
 	err := testExecuteKubectlOperation(t.Context(), mockClient, "unsupported", []string{})

@@ -13,6 +13,7 @@ import (
 // TestNewClusterService verifies that NewClusterService stores the runtime config
 // and leaves clusterAddr empty (non-Swarm path).
 func TestNewClusterService(t *testing.T) {
+	t.Parallel()
 	cfg := &agent.RuntimeConfig{NodeName: "n1"}
 	svc := NewClusterService(cfg)
 	assert.Equal(t, cfg, svc.runtimeConfiguration)
@@ -22,6 +23,7 @@ func TestNewClusterService(t *testing.T) {
 // TestNewSwarmClusterService verifies that NewSwarmClusterService stores both the
 // runtime config and the clusterAddr used for self-healing DNS re-resolution.
 func TestNewSwarmClusterService(t *testing.T) {
+	t.Parallel()
 	cfg := &agent.RuntimeConfig{NodeName: "n1"}
 	svc := NewSwarmClusterService(cfg, "tasks.agent")
 	assert.Equal(t, cfg, svc.runtimeConfiguration)
@@ -31,6 +33,7 @@ func TestNewSwarmClusterService(t *testing.T) {
 // TestConvertRuntimeConfigurationToTagMap verifies that all four conditional branches
 // in convertRuntimeConfigurationToTagMap produce the correct Serf tag map.
 func TestConvertRuntimeConfigurationToTagMap(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		input    *agent.RuntimeConfig
@@ -124,6 +127,7 @@ func TestConvertRuntimeConfigurationToTagMap(t *testing.T) {
 // TestClusterService_Leave verifies that Leave() is safe to call on a nil cluster
 // and leaves a live cluster without error.
 func TestClusterService_Leave(t *testing.T) {
+	t.Parallel()
 	t.Run("no-op when cluster is nil", func(t *testing.T) {
 		svc := NewClusterService(&agent.RuntimeConfig{NodeName: "n"})
 		require.NotPanics(t, func() { svc.Leave() })
@@ -142,6 +146,7 @@ func TestClusterService_Leave(t *testing.T) {
 // TestClusterService_MemberLookups tests Members, GetMemberByRole, GetMemberByNodeName,
 // and GetMemberWithEdgeKeySet against a live 2-node in-process cluster.
 func TestClusterService_MemberLookups(t *testing.T) {
+	t.Parallel()
 	// Manager node — tagged with role=manager and AgentPort.
 	mgrTags := map[string]string{
 		memberTagKeyNodeRole:  memberTagValueNodeRoleManager,
@@ -244,6 +249,7 @@ func TestClusterService_MemberLookups(t *testing.T) {
 
 // TestClusterService_Create verifies the Create() method across several scenarios.
 func TestClusterService_Create(t *testing.T) {
+	t.Parallel()
 	const probeTimeout = 25 * time.Millisecond
 	const probeInterval = 50 * time.Millisecond
 
@@ -303,6 +309,7 @@ func TestClusterService_Create(t *testing.T) {
 // TestClusterService_WatchClusterEvents_Filtering verifies that watchClusterEvents
 // only triggers the rejoin loop for EventMemberReap events on manager nodes.
 func TestClusterService_WatchClusterEvents_Filtering(t *testing.T) {
+	t.Parallel()
 	newSvc := func(t *testing.T) (*ClusterService, chan serf.Event) {
 		addr, ln := freeListener(t)
 		require.NoError(t, ln.Close())

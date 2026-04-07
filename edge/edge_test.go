@@ -12,6 +12,7 @@ func init() {
 }
 
 func TestBuildTransport(t *testing.T) {
+	t.Parallel()
 	_, ok := http.DefaultTransport.(*http.Transport)
 	if !ok {
 		t.Fatal("type assertion for http.DefaultTransport failed")

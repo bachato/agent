@@ -7,6 +7,7 @@ import (
 )
 
 func TestPollAsync_NoEdgeID(t *testing.T) {
+	t.Parallel()
 	s := &PollService{edgeID: ""}
 
 	err := s.pollAsync(true, true)

@@ -8,6 +8,7 @@ import (
 )
 
 func TestKeyDataRace(t *testing.T) {
+	t.Parallel()
 	mgr := NewManager(&ManagerParameters{
 		Options: &agent.Options{
 			DataPath: t.TempDir(),

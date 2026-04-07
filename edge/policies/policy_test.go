@@ -23,6 +23,7 @@ func init() {
 }
 
 func TestNewPolicyManager(t *testing.T) {
+	t.Parallel()
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	mockPortainerClient := mocks.NewMockPortainerClient(ctrl)
@@ -34,6 +35,7 @@ func TestNewPolicyManager(t *testing.T) {
 }
 
 func TestProcessPolicyHelmCharts(t *testing.T) {
+	t.Parallel()
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -162,6 +164,7 @@ func TestProcessPolicyHelmCharts(t *testing.T) {
 
 // Test adoption handler with no adoptions
 func TestAdoptResourcesBeforeInstall(t *testing.T) {
+	t.Parallel()
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -184,6 +187,7 @@ func TestAdoptResourcesBeforeInstall(t *testing.T) {
 
 // Test deletion handler with no deletions
 func TestDeleteResourcesBeforeInstall(t *testing.T) {
+	t.Parallel()
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -206,6 +210,7 @@ func TestDeleteResourcesBeforeInstall(t *testing.T) {
 
 // Test isNotFoundError helper function
 func TestIsNotFoundError(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		err      error
@@ -243,6 +248,7 @@ func TestIsNotFoundError(t *testing.T) {
 
 // Test getRestoreTypeForChart helper function
 func TestGetRestoreTypeForChart(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		chartName string
@@ -275,6 +281,7 @@ func TestGetRestoreTypeForChart(t *testing.T) {
 
 // Test restoreEnvironmentSettings function
 func TestRestoreEnvironmentSettings(t *testing.T) {
+	t.Parallel()
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -332,6 +339,7 @@ func TestRestoreEnvironmentSettings(t *testing.T) {
 
 // Test isFailedOrPendingStatus helper function
 func TestProcessRestorations(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name            string
 		restoreBundle   portainer.RestoreSettingsBundle
@@ -428,6 +436,7 @@ func TestProcessRestorations(t *testing.T) {
 }
 
 func TestProcessRestorationsRetryBehavior(t *testing.T) {
+	t.Parallel()
 	// Test that restoration settings are stored in pendingRestorations for retry
 	t.Run("Stores restoration settings for retry when deployment fails", func(t *testing.T) {
 		kubeClient := &kubernetes.KubeClient{}
@@ -525,6 +534,7 @@ func TestProcessRestorationsRetryBehavior(t *testing.T) {
 }
 
 func TestIsFailedOrPendingStatus(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		status   string
@@ -655,6 +665,7 @@ func newHistoryRelease(name, namespace string, status release.Status) *release.R
 
 // Test cleanupFailedRelease function
 func TestCleanupFailedRelease(t *testing.T) {
+	t.Parallel()
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 

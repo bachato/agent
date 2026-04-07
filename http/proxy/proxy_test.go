@@ -13,6 +13,7 @@ import (
 )
 
 func TestNewAgentReverseProxy(t *testing.T) {
+	t.Parallel()
 	fips.InitFIPS(false)
 
 	u, err := url.Parse("http://localhost:9001")
@@ -24,6 +25,7 @@ func TestNewAgentReverseProxy(t *testing.T) {
 }
 
 func TestCreateRewriteFn(t *testing.T) {
+	t.Parallel()
 	target := createURL(t, "https://portainer.io/api/docker?a=5&b=6")
 	targetNode := "test-node"
 	req := createRequest(

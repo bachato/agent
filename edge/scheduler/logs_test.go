@@ -10,6 +10,7 @@ import (
 )
 
 func TestDataRace(t *testing.T) {
+	t.Parallel()
 	fips.InitFIPS(false)
 
 	cli := client.NewPortainerClient(

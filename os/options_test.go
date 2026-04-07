@@ -8,6 +8,7 @@ import (
 )
 
 func TestOptionParser(t *testing.T) {
+	t.Parallel()
 	p := NewEnvOptionParser()
 	require.NotNil(t, p)
 

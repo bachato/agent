@@ -77,6 +77,7 @@ func TestGetOrRefreshGlobalClient(t *testing.T) {
 }
 
 func TestSessionDurationConstants(t *testing.T) {
+	t.Parallel()
 	// require that session duration is less than the AWS hardcoded duration, this should never happen
 	assert.Less(t, iamraSessionDurationSec, 12*60*60, "IAMRA session duration should not exceed 12 hours")
 }
@@ -147,6 +148,7 @@ func TestECRLoginWithValidClient(t *testing.T) {
 }
 
 func TestIsValidAWSConfig(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		opts     *agent.Options
@@ -231,6 +233,7 @@ func TestIsValidAWSConfig(t *testing.T) {
 }
 
 func TestDoAWSIAMRolesAnywhereAuthAndGetECRCredentials_ValidationErrors(t *testing.T) {
+	t.Parallel()
 	validConfig := &agent.AWSConfig{
 		RoleARN:        "role",
 		TrustAnchorARN: "trust-anchor",

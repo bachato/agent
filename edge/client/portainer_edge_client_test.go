@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
+	"testing/synctest"
 
 	"github.com/portainer/agent"
 	portainer "github.com/portainer/portainer/api"
@@ -18,6 +18,7 @@ import (
 )
 
 func TestGetEdgeConfig(t *testing.T) {
+	t.Parallel()
 	fips.InitFIPS(false)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -38,6 +39,7 @@ func TestGetEdgeConfig(t *testing.T) {
 }
 
 func TestMutateResponseForCaching(t *testing.T) {
+	t.Parallel()
 	// Create a test response with stacks that have ForceRedeploy set
 	originalResp := PollStatusResponse{
 		Stacks: []StackStatus{
@@ -82,8 +84,8 @@ func TestMutateResponseForCaching(t *testing.T) {
 }
 
 func TestUpdatePolicyChartStatuses_RetriesOnServerError(t *testing.T) {
+	t.Parallel()
 	fips.InitFIPS(false)
-	mockRetrySleep(t)
 
 	var requests int32
 	httpClient := BuildHTTPClient(30, &agent.Options{})
@@ -117,14 +119,16 @@ func TestUpdatePolicyChartStatuses_RetriesOnServerError(t *testing.T) {
 		serverAddress:   "http://edge.test",
 	}
 
-	err := client.UpdatePolicyChartStatuses([]portainer.PolicyChartStatus{{ChartName: "gatekeeper"}})
-	require.NoError(t, err)
-	require.Equal(t, int32(3), atomic.LoadInt32(&requests))
+	synctest.Test(t, func(t *testing.T) {
+		err := client.UpdatePolicyChartStatuses([]portainer.PolicyChartStatus{{ChartName: "gatekeeper"}})
+		require.NoError(t, err)
+		require.Equal(t, int32(3), atomic.LoadInt32(&requests))
+	})
 }
 
 func TestUpdatePolicyChartStatuses_RetriesOnTransportError(t *testing.T) {
+	t.Parallel()
 	fips.InitFIPS(false)
-	mockRetrySleep(t)
 
 	var requests int32
 	httpClient := BuildHTTPClient(30, &agent.Options{})
@@ -153,14 +157,16 @@ func TestUpdatePolicyChartStatuses_RetriesOnTransportError(t *testing.T) {
 		serverAddress:   "http://edge.test",
 	}
 
-	err := client.UpdatePolicyChartStatuses([]portainer.PolicyChartStatus{{ChartName: "gatekeeper"}})
-	require.NoError(t, err)
-	require.Equal(t, int32(2), atomic.LoadInt32(&requests))
+	synctest.Test(t, func(t *testing.T) {
+		err := client.UpdatePolicyChartStatuses([]portainer.PolicyChartStatus{{ChartName: "gatekeeper"}})
+		require.NoError(t, err)
+		require.Equal(t, int32(2), atomic.LoadInt32(&requests))
+	})
 }
 
 func TestUpdatePolicyChartStatuses_DoesNotRetryOnClientError(t *testing.T) {
+	t.Parallel()
 	fips.InitFIPS(false)
-	mockRetrySleep(t)
 
 	var requests int32
 	httpClient := BuildHTTPClient(30, &agent.Options{})
@@ -184,17 +190,6 @@ func TestUpdatePolicyChartStatuses_DoesNotRetryOnClientError(t *testing.T) {
 	err := client.UpdatePolicyChartStatuses([]portainer.PolicyChartStatus{{ChartName: "gatekeeper"}})
 	require.Error(t, err)
 	require.Equal(t, int32(1), atomic.LoadInt32(&requests))
-}
-
-func mockRetrySleep(t *testing.T) {
-	t.Helper()
-
-	orig := requestRetrySleep
-	requestRetrySleep = func(time.Duration) {}
-
-	t.Cleanup(func() {
-		requestRetrySleep = orig
-	})
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

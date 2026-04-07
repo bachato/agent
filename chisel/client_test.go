@@ -16,12 +16,14 @@ func init() {
 }
 
 func TestCertsNeedRotation(t *testing.T) {
+	t.Parallel()
 	c := NewClient("", "", "")
 	certsNeedRotation := c.CertsNeedRotation()
 	require.False(t, certsNeedRotation)
 }
 
 func TestInternalCertsNeedRotation(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
 		name                      string
 		fips                      bool
@@ -87,6 +89,7 @@ func TestInternalCertsNeedRotation(t *testing.T) {
 }
 
 func TestCloseTunnel(t *testing.T) {
+	t.Parallel()
 	c := NewClient("", "", "")
 
 	chiselClient, err := chclient.NewClient(&chclient.Config{})
@@ -99,6 +102,7 @@ func TestCloseTunnel(t *testing.T) {
 }
 
 func TestReplaceSchemaWithHTTPS(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
 		name        string
 		u           string

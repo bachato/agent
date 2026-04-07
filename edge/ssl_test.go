@@ -10,6 +10,7 @@ import (
 )
 
 func TestBlockUntilCertificateIsReady(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 
 	certPath := filepath.Join(tmpDir, "cert.pem")

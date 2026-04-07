@@ -9,6 +9,7 @@ import (
 )
 
 func TestHealthy(t *testing.T) {
+	t.Parallel()
 	withCleanup(t)
 	healthy := Healthy()
 	assert.False(t, healthy, "should be unhealthy")
@@ -20,6 +21,7 @@ func TestHealthy(t *testing.T) {
 }
 
 func TestSetHealthy(t *testing.T) {
+	t.Parallel()
 	withCleanup(t)
 	err := SetHealthy()
 	require.NoError(t, err)
@@ -29,6 +31,7 @@ func TestSetHealthy(t *testing.T) {
 }
 
 func TestSetUnhealthy(t *testing.T) {
+	t.Parallel()
 	withCleanup(t)
 	err := SetHealthy()
 	require.NoError(t, err)
@@ -42,6 +45,7 @@ func TestSetUnhealthy(t *testing.T) {
 }
 
 func TestConcurrency(t *testing.T) {
+	t.Parallel()
 	withCleanup(t)
 
 	const routines = 100

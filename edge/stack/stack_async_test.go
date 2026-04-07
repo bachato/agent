@@ -13,6 +13,7 @@ import (
 )
 
 func TestPortainerEdgeIDEnvVarPresent(t *testing.T) {
+	t.Parallel()
 	edgeID := "edge_id"
 
 	sm := NewStackManager(nil, "", nil, edgeID, nil)
@@ -63,6 +64,7 @@ func setupManagerAndFile(t *testing.T) (*StackManager, string) {
 }
 
 func TestStack_BuildDeployerParams_ForceRecreate(t *testing.T) {
+	t.Parallel()
 	t.Run("Force redeploy flag- should set ForceRecreate to true", func(t *testing.T) {
 		manager, composeFile := setupManagerAndFile(t)
 
