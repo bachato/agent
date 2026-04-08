@@ -231,7 +231,7 @@ func parseCertificatePEM(certPEM []byte) (*x509.Certificate, error) {
 		return nil, errors.Wrap(err, "unable to parse certificate")
 	}
 
-	if cert == nil {
+	if len(cert) == 0 {
 		return nil, errors.New("failed to decode certificate")
 	}
 
