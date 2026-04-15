@@ -1,6 +1,7 @@
 package websocket
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -53,32 +54,40 @@ func (handler *Handler) websocketPodExec(w http.ResponseWriter, r *http.Request)
 	stdoutReader, stdoutWriter := io.Pipe()
 	defer logs.CloseAndLogErr(stdoutWriter)
 
-	errorChan := make(chan error, 2)
+	errorChan := make(chan error, 3)
 
 	sizeQueue := kubecli.NewTerminalSizeQueue()
 	defer sizeQueue.Close()
 	go ws.StreamFromWebsocketToWriter(websocketConn, stdinWriter, errorChan, ws.ResizeHandler(sizeQueue))
 	go ws.StreamFromReaderToWebsocket(websocketConn, stdoutReader, errorChan)
-
-	err = handler.kubeClient.StartExecProcess(kubernetes.ExecProcessParams{
-		Token:         token,
-		Namespace:     namespace,
-		PodName:       podName,
-		ContainerName: containerName,
-		Command:       commandArray,
-		Stdin:         stdinReader,
-		Stdout:        stdoutWriter,
-		ResizeQueue:   sizeQueue,
-	})
-	if err != nil {
-		return httperror.InternalServerError("Unable to start exec process inside container", err)
-	}
+	go func() {
+		err := handler.kubeClient.StartExecProcess(kubernetes.ExecProcessParams{
+			Token:         token,
+			Namespace:     namespace,
+			PodName:       podName,
+			ContainerName: containerName,
+			Command:       commandArray,
+			Stdin:         stdinReader,
+			Stdout:        stdoutWriter,
+			ResizeQueue:   sizeQueue,
+		})
+		errorChan <- err
+	}()
 
 	err = <-errorChan
-	if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNoStatusReceived) {
-		log.Error().Err(err).Msg("websocket error")
+
+	if err == nil || errors.Is(err, io.EOF) {
+		// exec process ended normally (shell exited) - send a clean close frame to the browser
+		_ = websocketConn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+
+		return nil
 	}
 
-	return nil
-}
+	if websocket.IsUnexpectedCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseNoStatusReceived) {
+		log.Error().Err(err).Msg("websocket error")
 
+		return nil
+	}
+
+	return httperror.InternalServerError("Unable to start exec process inside container", err)
+}
