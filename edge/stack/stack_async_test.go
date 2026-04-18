@@ -43,32 +43,33 @@ func TestPortainerEdgeIDEnvVarPresent(t *testing.T) {
 	require.Equal(t, edgeID, edgeStack.EnvVars[0].Value)
 }
 
-func setupManagerAndFile(t *testing.T) (*StackManager, string) {
+func setupManagerAndFile(t *testing.T) (*StackManager, string, int) {
+	stackID := rand.Int()
+
 	manager := NewStackManager(nil, "", nil, "edge_id", nil)
-	manager.stacks[edgeStackID(1)] = &edgeStack{
-		StackPayload: edge.StackPayload{ID: 1, Version: 1},
+	manager.stacks[edgeStackID(stackID)] = &edgeStack{
+		StackPayload: edge.StackPayload{ID: stackID, Version: 1},
 	}
 
-	// Create a compose file
 	composeFile := `services:
 		nginx:
 			image: nginx`
 
-	stackFolder := getStackFileFolder(&edgeStack{StackPayload: edge.StackPayload{ID: 1, Version: 1}})
+	stackFolder := getStackFileFolder(&edgeStack{StackPayload: edge.StackPayload{ID: stackID, Version: 1}})
 	require.NoError(t, os.MkdirAll(stackFolder, 0755))
 	t.Cleanup(func() {
 		require.NoError(t, os.RemoveAll(stackFolder))
 	})
 
-	return manager, composeFile
+	return manager, composeFile, stackID
 }
 
 func TestStack_BuildDeployerParams_ForceRecreate(t *testing.T) {
 	t.Parallel()
 	t.Run("Force redeploy flag- should set ForceRecreate to true", func(t *testing.T) {
-		manager, composeFile := setupManagerAndFile(t)
+		manager, composeFile, stackID := setupManagerAndFile(t)
 
-		stackPayload := edge.StackPayload{ID: 1, Version: 1,
+		stackPayload := edge.StackPayload{ID: stackID, Version: 1,
 			DeployerOptionsPayload: edge.DeployerOptionsPayload{
 				ForceRecreate: true,
 			},
@@ -82,15 +83,14 @@ func TestStack_BuildDeployerParams_ForceRecreate(t *testing.T) {
 			EntryFileName: "docker-compose.yml",
 		}
 
-		// Test the target function
 		require.NoError(t, manager.buildDeployerParams(stackPayload, false))
 
 		require.True(t, manager.stacks[edgeStackID(stackPayload.ID)].DeployerOptionsPayload.ForceRecreate)
 	})
 
 	t.Run("No force flags - should set ForceRecreate to false", func(t *testing.T) {
-		manager, composeFile := setupManagerAndFile(t)
-		stackPayload := edge.StackPayload{ID: 1, Version: 2,
+		manager, composeFile, stackID := setupManagerAndFile(t)
+		stackPayload := edge.StackPayload{ID: stackID, Version: 2,
 			DirEntries: []filesystem.DirEntry{
 				{
 					Name:    "docker-compose.yml",

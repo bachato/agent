@@ -44,6 +44,7 @@ func (m *stubHelmManager) Uninstall(opts options.UninstallOptions) error {
 
 // --- convertStackNameToReleaseName ---
 func TestConvertStackNameToReleaseName(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		input    string
@@ -71,6 +72,7 @@ func TestConvertStackNameToReleaseName(t *testing.T) {
 // --- parseHelmConfigFromBase ---
 
 func TestParseHelmConfigFromBase(t *testing.T) {
+	t.Parallel()
 	d := &HelmDeployer{}
 
 	t.Run("git deployment config", func(t *testing.T) {
@@ -116,6 +118,7 @@ func TestParseHelmConfigFromBase(t *testing.T) {
 // --- Deploy: validation errors (no manager call needed) ---
 
 func TestDeploy_ValidationErrors(t *testing.T) {
+	t.Parallel()
 	d := newHelmDeployerWithManager(&stubHelmManager{}, nil)
 
 	tests := []struct {
@@ -162,6 +165,7 @@ func TestDeploy_ValidationErrors(t *testing.T) {
 // --- Deploy: helm repository success ---
 
 func TestDeploy_HelmRepo_Success(t *testing.T) {
+	t.Parallel()
 	var capturedOpts options.InstallOptions
 	mock := &stubHelmManager{
 		upgradeFunc: func(opts options.InstallOptions) (*release.Release, error) {
@@ -197,6 +201,7 @@ func TestDeploy_HelmRepo_Success(t *testing.T) {
 // --- Deploy: helm manager error propagation ---
 
 func TestDeploy_HelmRepo_ManagerError(t *testing.T) {
+	t.Parallel()
 	mock := &stubHelmManager{
 		upgradeFunc: func(opts options.InstallOptions) (*release.Release, error) {
 			return nil, errors.New("cluster unreachable")
@@ -223,6 +228,7 @@ func TestDeploy_HelmRepo_ManagerError(t *testing.T) {
 // --- Remove ---
 
 func TestRemove_Success(t *testing.T) {
+	t.Parallel()
 	var capturedOpts options.UninstallOptions
 	mock := &stubHelmManager{
 		uninstallFunc: func(opts options.UninstallOptions) error {
@@ -244,6 +250,7 @@ func TestRemove_Success(t *testing.T) {
 // --- Deploy: git repository success ---
 
 func TestDeploy_GitRepo_Success(t *testing.T) {
+	t.Parallel()
 	// Set up a temp working dir that mirrors a cloned git repository:
 	//   <workingDir>/charts/myapp/   ← chart directory
 	//   <workingDir>/values.yaml     ← values file
