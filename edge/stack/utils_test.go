@@ -1,11 +1,11 @@
 package stack
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/portainer/agent"
 	"github.com/portainer/portainer/api/edge"
+	"github.com/portainer/portainer/api/filesystem"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -24,7 +24,7 @@ func Test_getStackFileFolder(t *testing.T) {
 					ID: 42,
 				},
 			},
-			expected: filepath.Join(agent.EdgeStackFilesPath, "42"),
+			expected: filesystem.JoinPaths(agent.EdgeStackFilesPath, "42"),
 		},
 		{
 			name: "RelativePath",
@@ -35,7 +35,7 @@ func Test_getStackFileFolder(t *testing.T) {
 					SupportRelativePath: true,
 				},
 			},
-			expected: filepath.Join("/tmp/edge", agent.ComposePathPrefix, "7"),
+			expected: filesystem.JoinPaths("/tmp/edge", agent.ComposePathPrefix, "7"),
 		},
 		{
 			name: "EdgeUpdateID",
@@ -45,7 +45,7 @@ func Test_getStackFileFolder(t *testing.T) {
 					EdgeUpdateID: 123,
 				},
 			},
-			expected: filepath.Join(agent.UpdateEdgeStackFilesPath, "99"),
+			expected: filesystem.JoinPaths(agent.UpdateEdgeStackFilesPath, "99"),
 		},
 		{
 			name: "RelativePath+EdgeUpdateID",
@@ -57,7 +57,7 @@ func Test_getStackFileFolder(t *testing.T) {
 					EdgeUpdateID:        1,
 				},
 			},
-			expected: filepath.Join(agent.UpdateEdgeStackFilesPath, "55"),
+			expected: filesystem.JoinPaths(agent.UpdateEdgeStackFilesPath, "55"),
 		},
 	}
 

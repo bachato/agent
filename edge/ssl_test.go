@@ -2,9 +2,10 @@ package edge
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/portainer/portainer/api/filesystem"
 
 	"github.com/stretchr/testify/require"
 )
@@ -13,8 +14,8 @@ func TestBlockUntilCertificateIsReady(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 
-	certPath := filepath.Join(tmpDir, "cert.pem")
-	keyPath := filepath.Join(tmpDir, "key.pem")
+	certPath := filesystem.JoinPaths(tmpDir, "cert.pem")
+	keyPath := filesystem.JoinPaths(tmpDir, "key.pem")
 
 	ch := make(chan struct{})
 

@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/portainer/agent/deployer"
+	"github.com/portainer/portainer/api/filesystem"
 	libstack "github.com/portainer/portainer/pkg/libstack"
 )
 
@@ -56,7 +56,7 @@ services:
 			projectName := testCase.TestName
 
 			composeFileName := fmt.Sprintf("docker-compose-%s.yml", projectName)
-			composeFilePath := filepath.Join(dir, composeFileName)
+			composeFilePath := filesystem.JoinPaths(dir, composeFileName)
 			f, _ := os.Create(composeFilePath)
 			_, err := f.WriteString(testCase.FileContent)
 			if err != nil {

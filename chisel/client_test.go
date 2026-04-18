@@ -2,11 +2,11 @@ package chisel
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
 	chclient "github.com/jpillora/chisel/client"
+	"github.com/portainer/portainer/api/filesystem"
 	"github.com/portainer/portainer/pkg/fips"
 	"github.com/stretchr/testify/require"
 )
@@ -54,15 +54,15 @@ func TestInternalCertsNeedRotation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 
-			tlsCaCert := filepath.Join(dir, "tls-ca-cert.pem")
+			tlsCaCert := filesystem.JoinPaths(dir, "tls-ca-cert.pem")
 			err := os.WriteFile(tlsCaCert, []byte{}, 0o600)
 			require.NoError(t, err)
 
-			tlsCert := filepath.Join(dir, "tls-cert.pem")
+			tlsCert := filesystem.JoinPaths(dir, "tls-cert.pem")
 			err = os.WriteFile(tlsCert, []byte{}, 0o600)
 			require.NoError(t, err)
 
-			tlsKey := filepath.Join(dir, "tls-key.pem")
+			tlsKey := filesystem.JoinPaths(dir, "tls-key.pem")
 			err = os.WriteFile(tlsKey, []byte{}, 0o600)
 			require.NoError(t, err)
 

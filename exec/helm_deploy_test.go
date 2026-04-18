@@ -3,10 +3,10 @@ package exec
 import (
 	"errors"
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/portainer/agent/deployer"
+	"github.com/portainer/portainer/api/filesystem"
 	"github.com/portainer/portainer/pkg/libhelm/options"
 	"github.com/portainer/portainer/pkg/libhelm/release"
 	"github.com/portainer/portainer/pkg/libhelm/sdk"
@@ -255,10 +255,10 @@ func TestDeploy_GitRepo_Success(t *testing.T) {
 	//   <workingDir>/charts/myapp/   ← chart directory
 	//   <workingDir>/values.yaml     ← values file
 	workingDir := t.TempDir()
-	chartDir := filepath.Join(workingDir, "charts", "myapp")
+	chartDir := filesystem.JoinPaths(workingDir, "charts", "myapp")
 	require.NoError(t, os.MkdirAll(chartDir, 0o755))
 	require.NoError(t, os.WriteFile(
-		filepath.Join(workingDir, "values.yaml"),
+		filesystem.JoinPaths(workingDir, "values.yaml"),
 		[]byte("replicaCount: 2\n"),
 		0o644,
 	))
