@@ -43,30 +43,6 @@ const (
 
 var collectRawMetricsFn = kubernetes.CollectRawMetrics
 
-func init() {
-	if os.Getenv("PORTAINER_AGENT_FAKE_METRICS") == "" {
-		return
-	}
-
-	log.Warn().Msg("PORTAINER_AGENT_FAKE_METRICS is set — injecting synthetic high-usage metrics for alert testing")
-
-	collectRawMetricsFn = func(_ context.Context, _ *kubernetes.KubeClient) (*kubernetes.ClusterRawMetrics, error) {
-		return &kubernetes.ClusterRawMetrics{
-			HasCPU:                true,
-			CPUUsageNanoCores:     9_500_000_000,  // 9.5 cores used
-			CPUCapacityNanoCores:  10_000_000_000, // 10 cores total → 95%
-			HasMemory:             true,
-			MemoryWorkingSetBytes: 9_500_000_000,  // ~9.5 GB used
-			MemoryCapacityBytes:   10_000_000_000, // ~10 GB total → 95%
-			HasDisk:               true,
-			DiskUsedBytes:         950_000_000_000,   // ~950 GB used
-			DiskCapacityBytes:     1_000_000_000_000, // ~1 TB total → 95%
-			HasNetwork:            true,
-			NetworkRxBytes:        500_000_000, // 500 MB
-			NetworkTxBytes:        500_000_000, // 500 MB
-		}, nil
-	}
-}
 
 func buildMetricsScrapeTarget(apiServerAddr string) string {
 	if host, port, err := net.SplitHostPort(apiServerAddr); err == nil {
