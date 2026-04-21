@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/portainer/agent/deployer"
 	"github.com/portainer/agent/kubernetes"
+	"github.com/portainer/portainer/api/filesystem"
 	"github.com/portainer/portainer/pkg/libhelm/options"
 	"github.com/portainer/portainer/pkg/libhelm/sdk"
 	helmtypes "github.com/portainer/portainer/pkg/libhelm/types"
@@ -121,7 +123,7 @@ func (d *HelmDeployer) Deploy(ctx context.Context, name string, filePaths []stri
 // buildInstallOptsForGitRepo builds InstallOptions for a git-based deployment.
 // Chart files are already on disk after git clone; this resolves paths and merges values files.
 func (d *HelmDeployer) buildInstallOptsForGitRepo(releaseName string, deployOpts deployer.DeployOptions, helmConfig *helmConfig, timeout time.Duration) (options.InstallOptions, error) {
-	absoluteChartPath, err := d.resolveChartPath(helmConfig.ChartPath, deployOpts.WorkingDir)
+	absoluteChartPath, err := resolveChartPath(deployOpts.WorkingDir, helmConfig.ChartPath)
 	if err != nil {
 		return options.InstallOptions{}, fmt.Errorf("failed to resolve chart path: %w", err)
 	}
@@ -135,7 +137,13 @@ func (d *HelmDeployer) buildInstallOptsForGitRepo(releaseName string, deployOpts
 
 	absoluteValuesFiles := make([]string, 0, len(helmConfig.ValuesFiles))
 	for _, valuesFile := range helmConfig.ValuesFiles {
-		absoluteValuesPath, err := d.resolveChartPath(valuesFile, deployOpts.WorkingDir)
+		if len(valuesFile) == 0 {
+			log.Debug().
+				Str("context", "HelmDeployer").
+				Msg("skipping empty values file entry")
+			continue
+		}
+		absoluteValuesPath, err := resolveChartPath(deployOpts.WorkingDir, valuesFile)
 		if err != nil {
 			return options.InstallOptions{}, fmt.Errorf("failed to resolve values file path %s: %w", valuesFile, err)
 		}
@@ -374,27 +382,21 @@ func (d *HelmDeployer) parseHelmConfigFromBase(baseOpts deployer.DeployerBaseOpt
 	return config, nil
 }
 
-// resolveChartPath resolves the absolute path for a chart or values file
-// relativePath is the path from the git repository (e.g., "charts/hello-world")
-// workingDir is the stack's file folder where files were written (e.g., "/opt/portainer/edge_stacks/1")
-func (d *HelmDeployer) resolveChartPath(relativePath, workingDir string) (string, error) {
-	// If the path is already absolute, return it as-is
-	if strings.HasPrefix(relativePath, "/") {
-		return relativePath, nil
+// resolveChartPath resolves a relative chart or values file path against workingDir.
+// path must be relative; absolute paths are rejected to prevent path traversal.
+// workingDir is the edge stack folder (e.g., "/opt/portainer/edge_stacks/1").
+func resolveChartPath(workingDir, path string) (string, error) {
+	if filepath.IsAbs(path) {
+		return "", fmt.Errorf("chart path must be relative, got: %s", path)
 	}
 
-	// Construct absolute path by joining workingDir with relativePath
-	absolutePath := relativePath
-	if workingDir != "" {
-		absolutePath = fmt.Sprintf("%s/%s", strings.TrimSuffix(workingDir, "/"), relativePath)
-	}
+	absolutePath := filesystem.JoinPaths(workingDir, path)
 
-	// Verify the path exists
 	if _, err := os.Stat(absolutePath); err != nil {
 		if os.IsNotExist(err) {
-			return "", fmt.Errorf("chart path does not exist: %s", absolutePath)
+			return "", fmt.Errorf("chart path does not exist: %s", path)
 		}
-		return "", fmt.Errorf("failed to check chart path: %w", err)
+		return "", fmt.Errorf("failed to resolve chart path: %w", err)
 	}
 
 	return absolutePath, nil

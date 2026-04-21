@@ -3,6 +3,7 @@ package exec
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/portainer/agent/deployer"
@@ -248,7 +249,6 @@ func TestRemove_Success(t *testing.T) {
 }
 
 // --- Deploy: git repository success ---
-
 func TestDeploy_GitRepo_Success(t *testing.T) {
 	t.Parallel()
 	// Set up a temp working dir that mirrors a cloned git repository:
@@ -295,4 +295,54 @@ func TestDeploy_GitRepo_Success(t *testing.T) {
 	// Verify the values file was read and merged. We check key existence rather than
 	// the exact integer type because YAML libraries may decode "2" as int, int64, or float64.
 	assert.Contains(t, capturedOpts.Values, "replicaCount")
+}
+
+func TestResolveChartPath(t *testing.T) {
+	t.Run("relative path within workingDir is resolved to absolute path", func(t *testing.T) {
+		t.Parallel()
+		workingDir := t.TempDir()
+		chartDir := filepath.Join(workingDir, "charts", "myapp")
+		require.NoError(t, os.MkdirAll(chartDir, 0o755))
+
+		got, err := resolveChartPath(workingDir, "charts/myapp")
+		require.NoError(t, err)
+		assert.Equal(t, chartDir, got)
+	})
+
+	t.Run("relative path that does not exist returns error", func(t *testing.T) {
+		t.Parallel()
+		workingDir := t.TempDir()
+		_, err := resolveChartPath(workingDir, "charts/missing")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "chart path does not exist")
+	})
+
+	t.Run("relative path traversal attempt is rejected by JoinPaths", func(t *testing.T) {
+		t.Parallel()
+		workingDir := t.TempDir()
+		// filesystem.JoinPaths strips the traversal, so the resolved path stays
+		// inside workingDir — which does not exist — and stat fails safely.
+		_, err := resolveChartPath(workingDir, "../../etc/passwd")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "chart path does not exist")
+	})
+
+	t.Run("absolute path is rejected", func(t *testing.T) {
+		t.Parallel()
+		workingDir := t.TempDir()
+		_, err := resolveChartPath(workingDir, "/etc/passwd")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "chart path must be relative")
+	})
+
+	t.Run("absolute path traversal is rejected", func(t *testing.T) {
+		t.Parallel()
+		workingDir := t.TempDir()
+		// The dangerous HELM_CHART_PATH vector: an absolute path with .. components
+		// that would resolve to a sensitive file on the agent node.
+		_, err := resolveChartPath(workingDir, "/opt/portainer/edge_stacks/1/../../../../etc/kubernetes/admin.conf")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "chart path must be relative")
+	})
+
 }
