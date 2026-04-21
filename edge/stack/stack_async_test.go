@@ -5,6 +5,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/portainer/agent"
 	"github.com/portainer/portainer/api/edge"
@@ -104,4 +105,30 @@ func TestStack_BuildDeployerParams_ForceRecreate(t *testing.T) {
 
 		require.False(t, manager.stacks[edgeStackID(stackPayload.ID)].DeployerOptionsPayload.ForceRecreate)
 	})
+}
+
+func TestStack_BuildDeployerParams_resetsFirstAction(t *testing.T) {
+	t.Parallel()
+	manager, composeFile, stackID := setupManagerAndFile(t)
+
+	manager.stacks[edgeStackID(stackID)].FirstAction = time.Now().Add(-5 * time.Minute)
+
+	stackPayload := edge.StackPayload{
+		ID:      stackID,
+		Version: 2,
+		DirEntries: []filesystem.DirEntry{
+			{
+				Name:    "docker-compose.yml",
+				Content: base64.StdEncoding.EncodeToString([]byte(composeFile)),
+				IsFile:  true,
+			},
+		},
+		EntryFileName: "docker-compose.yml",
+	}
+
+	err := manager.buildDeployerParams(stackPayload, false)
+	require.NoError(t, err)
+
+	stack := manager.stacks[edgeStackID(stackID)]
+	require.True(t, stack.FirstAction.IsZero())
 }
