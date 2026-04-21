@@ -89,7 +89,6 @@ require (
 	github.com/bits-and-blooms/bitset v1.12.0 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/buger/goterm v1.0.4 // indirect
-	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/chai2010/gettext-go v1.0.2 // indirect
@@ -263,7 +262,6 @@ require (
 	github.com/prometheus/alertmanager v0.31.1 // indirect
 	github.com/prometheus/client_golang/exp v0.0.0-20260108101519-fb0838f53562 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
-	github.com/prometheus/common v0.67.5 // indirect
 	github.com/prometheus/otlptranslator v1.0.0 // indirect
 	github.com/prometheus/procfs v0.19.2 // indirect
 	github.com/prometheus/sigv4 v0.4.1 // indirect
@@ -358,7 +356,6 @@ require (
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20250910181357-589584f1c912 // indirect
 	k8s.io/kubectl v0.35.1 // indirect
-	k8s.io/kubelet v0.35.0 // indirect
 	k8s.io/metrics v0.35.1 // indirect
 	k8s.io/utils v0.0.0-20251002143259-bc988d571ff4 // indirect
 	oras.land/oras-go/v2 v2.6.0 // indirect
