@@ -73,9 +73,9 @@ func TestAggregateClusterPerformanceMetrics_DiskUsage(t *testing.T) {
 			makeNode("node2", 4000, 8*1024*1024*1024),
 		}
 
-		var counter int64
+		var counter atomic.Int64
 		collectFn := func(_ corev1.Node) (*nodePerformanceSample, error) {
-			i := atomic.AddInt64(&counter, 1)
+			i := counter.Add(1)
 			used := uint64(i) * 25 * 1024 * 1024 * 1024
 			return &nodePerformanceSample{
 				DiskUsedBytes:     used,
