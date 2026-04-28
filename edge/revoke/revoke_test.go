@@ -191,10 +191,10 @@ func TestLdapURLErr(t *testing.T) {
 func TestCertNotYetValid(t *testing.T) {
 	t.Parallel()
 	service := setup()
-	notReadyCert := expiredCert
+	notReadyCert := *expiredCert
 	notReadyCert.NotBefore = time.Date(3000, time.January, 1, 1, 1, 1, 1, time.Local)
 	notReadyCert.NotAfter = time.Date(3005, time.January, 1, 1, 1, 1, 1, time.Local)
-	if revoked, _ := service.VerifyCertificate(expiredCert); !revoked {
+	if revoked, _ := service.VerifyCertificate(&notReadyCert); !revoked {
 		t.Fatalf("not yet verified certificate should have been marked as revoked")
 	}
 }
