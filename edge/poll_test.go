@@ -143,8 +143,10 @@ func TestPollPublishesAlertStateAfterReloadHandling(t *testing.T) {
 
 func TestPushPerformanceMetricsClearsSnapshotOnCollectionFailure(t *testing.T) {
 	oldCollectRawMetricsFn := collectRawMetricsFn
+	oldCollectNodeConditionsFn := collectNodeConditionsFn
 	t.Cleanup(func() {
 		collectRawMetricsFn = oldCollectRawMetricsFn
+		collectNodeConditionsFn = oldCollectNodeConditionsFn
 	})
 
 	manager := NewManager(&ManagerParameters{
@@ -154,6 +156,10 @@ func TestPushPerformanceMetricsClearsSnapshotOnCollectionFailure(t *testing.T) {
 	service := &PollService{
 		edgeManager:    manager,
 		metricsHandler: manager.MetricsHandler(),
+	}
+
+	collectNodeConditionsFn = func(_ context.Context, _ *kubernetes.KubeClient) ([]kubernetes.NodeReadyStatus, error) {
+		return nil, errors.New("collect node conditions failed")
 	}
 
 	collectRawMetricsFn = func(_ context.Context, _ *kubernetes.KubeClient) (*kubernetes.ClusterRawMetrics, error) {
@@ -174,6 +180,78 @@ func TestPushPerformanceMetricsClearsSnapshotOnCollectionFailure(t *testing.T) {
 	body := serveMetrics(t, service.metricsHandler)
 	require.NotContains(t, body, pkgmetrics.ClusterCPUUsageCoresMetric)
 	require.Empty(t, body)
+}
+
+func TestPushPerformanceMetricsUpdatesNodeReadinessWhenRawCollectionFails(t *testing.T) {
+	oldCollectRawMetricsFn := collectRawMetricsFn
+	oldCollectNodeConditionsFn := collectNodeConditionsFn
+	t.Cleanup(func() {
+		collectRawMetricsFn = oldCollectRawMetricsFn
+		collectNodeConditionsFn = oldCollectNodeConditionsFn
+	})
+
+	manager := NewManager(&ManagerParameters{
+		Options:           &agent.Options{DataPath: t.TempDir()},
+		ContainerPlatform: agent.PlatformKubernetes,
+	})
+	service := &PollService{
+		edgeManager:    manager,
+		metricsHandler: manager.MetricsHandler(),
+	}
+
+	collectRawMetricsFn = func(_ context.Context, _ *kubernetes.KubeClient) (*kubernetes.ClusterRawMetrics, error) {
+		return nil, errors.New("collect raw metrics failed")
+	}
+	collectNodeConditionsFn = func(_ context.Context, _ *kubernetes.KubeClient) ([]kubernetes.NodeReadyStatus, error) {
+		return []kubernetes.NodeReadyStatus{{Name: "node-a", Ready: false}}, nil
+	}
+
+	service.pushPerformanceMetrics(context.Background())
+
+	body := serveMetrics(t, service.metricsHandler)
+	require.NotContains(t, body, pkgmetrics.ClusterCPUUsageCoresMetric)
+	require.Contains(t, body, pkgmetrics.ClusterNodeReadyMetric+"{node=\"node-a\"} 0")
+}
+
+func TestPushPerformanceMetricsClearsNodeReadinessOnNodeCollectionFailure(t *testing.T) {
+	oldCollectRawMetricsFn := collectRawMetricsFn
+	oldCollectNodeConditionsFn := collectNodeConditionsFn
+	t.Cleanup(func() {
+		collectRawMetricsFn = oldCollectRawMetricsFn
+		collectNodeConditionsFn = oldCollectNodeConditionsFn
+	})
+
+	manager := NewManager(&ManagerParameters{
+		Options:           &agent.Options{DataPath: t.TempDir()},
+		ContainerPlatform: agent.PlatformKubernetes,
+	})
+	service := &PollService{
+		edgeManager:    manager,
+		metricsHandler: manager.MetricsHandler(),
+	}
+
+	collectRawMetricsFn = func(_ context.Context, _ *kubernetes.KubeClient) (*kubernetes.ClusterRawMetrics, error) {
+		return &kubernetes.ClusterRawMetrics{
+			HasCPU:               true,
+			CPUUsageNanoCores:    1_000_000_000,
+			CPUCapacityNanoCores: 2_000_000_000,
+		}, nil
+	}
+	collectNodeConditionsFn = func(_ context.Context, _ *kubernetes.KubeClient) ([]kubernetes.NodeReadyStatus, error) {
+		return []kubernetes.NodeReadyStatus{{Name: "node-a", Ready: true}}, nil
+	}
+
+	service.pushPerformanceMetrics(context.Background())
+	require.Contains(t, serveMetrics(t, service.metricsHandler), pkgmetrics.ClusterNodeReadyMetric+"{node=\"node-a\"} 1")
+
+	collectNodeConditionsFn = func(_ context.Context, _ *kubernetes.KubeClient) ([]kubernetes.NodeReadyStatus, error) {
+		return nil, errors.New("collect node conditions failed")
+	}
+
+	service.pushPerformanceMetrics(context.Background())
+	body := serveMetrics(t, service.metricsHandler)
+	require.Contains(t, body, pkgmetrics.ClusterCPUUsageCoresMetric)
+	require.NotContains(t, body, pkgmetrics.ClusterNodeReadyMetric)
 }
 
 func TestMaybeReloadRulesRetriesAfterFilesystemFailure(t *testing.T) {

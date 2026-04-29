@@ -42,7 +42,7 @@ const (
 )
 
 var collectRawMetricsFn = kubernetes.CollectRawMetrics
-
+var collectNodeConditionsFn = kubernetes.CollectNodeConditions
 
 func buildMetricsScrapeTarget(apiServerAddr string) string {
 	if host, port, err := net.SplitHostPort(apiServerAddr); err == nil {
@@ -536,23 +536,30 @@ func (service *PollService) pushPerformanceMetrics(ctx context.Context) {
 		return
 	}
 
-	raw, err := collectRawMetricsFn(ctx, service.edgeManager.kubeClient)
-	if err != nil {
+	raw, rawErr := collectRawMetricsFn(ctx, service.edgeManager.kubeClient)
+	if rawErr != nil {
 		service.metricsHandler.ClearMetrics()
-		log.Warn().Err(err).Msg("metric-tick: failed to collect K8s raw metrics, cleared published snapshot")
-		return
+		log.Warn().Err(rawErr).Msg("metric-tick: failed to collect K8s raw metrics, cleared published snapshot")
+	} else {
+		log.Debug().
+			Bool("has_cpu", raw.HasCPU).
+			Bool("has_memory", raw.HasMemory).
+			Bool("has_disk", raw.HasDisk).
+			Bool("has_network", raw.HasNetwork).
+			Msg("metric-tick: collected raw metrics, updating gauges")
+
+		service.metricsHandler.UpdateMetrics(raw)
 	}
 
-	log.Debug().
-		Bool("has_cpu", raw.HasCPU).
-		Bool("has_memory", raw.HasMemory).
-		Bool("has_disk", raw.HasDisk).
-		Bool("has_network", raw.HasNetwork).
-		Msg("metric-tick: collected metrics, updating gauges")
+	statuses, nodeErr := collectNodeConditionsFn(ctx, service.edgeManager.kubeClient)
+	if nodeErr != nil {
+		service.metricsHandler.ClearNodeMetrics()
+		log.Warn().Err(nodeErr).Msg("metric-tick: failed to collect node conditions, cleared node readiness gauges")
+	} else {
+		service.metricsHandler.UpdateNodeMetrics(statuses)
+		log.Debug().Int("node_count", len(statuses)).Msg("metric-tick: node readiness gauges updated")
+	}
 
-	service.metricsHandler.UpdateMetrics(raw)
-
-	log.Debug().Msg("metric-tick: metrics updated successfully")
 }
 
 func (service *PollService) publishAlertState() {

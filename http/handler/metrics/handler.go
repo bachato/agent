@@ -26,14 +26,27 @@ var metricNames = []string{
 type Handler struct {
 	handler http.Handler
 
-	mu          sync.RWMutex
-	descriptors map[string]*prometheusreg.Desc
-	values      map[string]float64
+	mu                sync.RWMutex
+	descriptors       map[string]*prometheusreg.Desc
+	values            map[string]float64
+	nodeReady         *prometheusreg.GaugeVec
+	nodeUnschedulable *prometheusreg.GaugeVec
 }
 
 // NewHandler creates a new metrics handler with a dedicated Prometheus registry.
 func NewHandler() *Handler {
 	reg := prometheusreg.NewRegistry()
+	nodeReady := prometheusreg.NewGaugeVec(prometheusreg.GaugeOpts{
+		Name: pkgmetrics.ClusterNodeReadyMetric,
+		Help: "1 if the node is Ready, 0 if NotReady",
+	}, []string{"node"})
+	reg.MustRegister(nodeReady)
+
+	nodeUnschedulable := prometheusreg.NewGaugeVec(prometheusreg.GaugeOpts{
+		Name: pkgmetrics.ClusterNodeUnschedulableMetric,
+		Help: "1 if the node is cordoned (unschedulable), 0 otherwise",
+	}, []string{"node"})
+	reg.MustRegister(nodeUnschedulable)
 
 	descriptors := make(map[string]*prometheusreg.Desc, len(metricNames))
 	for _, name := range metricNames {
@@ -41,8 +54,10 @@ func NewHandler() *Handler {
 	}
 
 	h := &Handler{
-		descriptors: descriptors,
-		values:      make(map[string]float64),
+		descriptors:       descriptors,
+		values:            make(map[string]float64),
+		nodeReady:         nodeReady,
+		nodeUnschedulable: nodeUnschedulable,
 	}
 	reg.MustRegister(h)
 
@@ -79,6 +94,32 @@ func (h *Handler) UpdateMetrics(raw *kubernetes.ClusterRawMetrics) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.values = snapshot
+}
+
+// UpdateNodeMetrics sets per-node readiness and unschedulable gauges.
+func (h *Handler) UpdateNodeMetrics(statuses []kubernetes.NodeReadyStatus) {
+	h.nodeReady.Reset()
+	h.nodeUnschedulable.Reset()
+
+	for _, status := range statuses {
+		readyVal := 0.0
+		if status.Ready {
+			readyVal = 1.0
+		}
+		h.nodeReady.WithLabelValues(status.Name).Set(readyVal)
+
+		unschedulableVal := 0.0
+		if status.Unschedulable {
+			unschedulableVal = 1.0
+		}
+		h.nodeUnschedulable.WithLabelValues(status.Name).Set(unschedulableVal)
+	}
+}
+
+// ClearNodeMetrics removes all published per-node gauges.
+func (h *Handler) ClearNodeMetrics() {
+	h.nodeReady.Reset()
+	h.nodeUnschedulable.Reset()
 }
 
 // ClearMetrics removes the currently published metric snapshot.

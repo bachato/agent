@@ -49,6 +49,47 @@ func TestClearMetricsRemovesPublishedSnapshot(t *testing.T) {
 	require.Empty(t, body)
 }
 
+func TestUpdateNodeMetricsReplacesPublishedSeries(t *testing.T) {
+	h := NewHandler()
+
+	h.UpdateNodeMetrics([]kubernetes.NodeReadyStatus{
+		{Name: "node-a", Ready: true, Unschedulable: false},
+		{Name: "node-b", Ready: false, Unschedulable: true},
+	})
+
+	body := serveMetrics(t, h)
+	require.Contains(t, body, pkgmetrics.ClusterNodeReadyMetric+"{node=\"node-a\"} 1")
+	require.Contains(t, body, pkgmetrics.ClusterNodeReadyMetric+"{node=\"node-b\"} 0")
+	require.Contains(t, body, pkgmetrics.ClusterNodeUnschedulableMetric+"{node=\"node-a\"} 0")
+	require.Contains(t, body, pkgmetrics.ClusterNodeUnschedulableMetric+"{node=\"node-b\"} 1")
+
+	h.UpdateNodeMetrics([]kubernetes.NodeReadyStatus{{Name: "node-b", Ready: true, Unschedulable: false}})
+
+	body = serveMetrics(t, h)
+	require.NotContains(t, body, pkgmetrics.ClusterNodeReadyMetric+"{node=\"node-a\"}")
+	require.Contains(t, body, pkgmetrics.ClusterNodeReadyMetric+"{node=\"node-b\"} 1")
+	require.NotContains(t, body, pkgmetrics.ClusterNodeUnschedulableMetric+"{node=\"node-a\"}")
+	require.Contains(t, body, pkgmetrics.ClusterNodeUnschedulableMetric+"{node=\"node-b\"} 0")
+}
+
+func TestClearNodeMetricsKeepsRawSnapshot(t *testing.T) {
+	h := NewHandler()
+
+	h.UpdateMetrics(&kubernetes.ClusterRawMetrics{
+		HasCPU:               true,
+		CPUUsageNanoCores:    2_000_000_000,
+		CPUCapacityNanoCores: 4_000_000_000,
+	})
+	h.UpdateNodeMetrics([]kubernetes.NodeReadyStatus{{Name: "node-a", Ready: false, Unschedulable: true}})
+
+	h.ClearNodeMetrics()
+
+	body := serveMetrics(t, h)
+	require.Contains(t, body, pkgmetrics.ClusterCPUUsageCoresMetric)
+	require.NotContains(t, body, pkgmetrics.ClusterNodeReadyMetric)
+	require.NotContains(t, body, pkgmetrics.ClusterNodeUnschedulableMetric)
+}
+
 func serveMetrics(t *testing.T, h *Handler) string {
 	t.Helper()
 
