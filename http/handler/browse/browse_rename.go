@@ -35,11 +35,14 @@ func (handler *Handler) browseRename(rw http.ResponseWriter, r *http.Request) *h
 	}
 
 	if volumeID != "" {
-		payload.CurrentFilePath, err = filesystem.BuildPathToFileInsideVolume(volumeID, payload.CurrentFilePath)
+		payload.CurrentFilePath, err = resolveVolumePathFunc(volumeID, payload.CurrentFilePath)
 		if err != nil {
+			if errors.Is(err, filesystem.ErrSystemVolumePathNotMounted) {
+				return httperror.InternalServerError("Volume path not mounted", err)
+			}
 			return httperror.BadRequest("Invalid volume", err)
 		}
-		payload.NewFilePath, err = filesystem.BuildPathToFileInsideVolume(volumeID, payload.NewFilePath)
+		payload.NewFilePath, err = resolveVolumePathFunc(volumeID, payload.NewFilePath)
 		if err != nil {
 			return httperror.BadRequest("Invalid volume", err)
 		}
@@ -66,11 +69,14 @@ func (handler *Handler) browseRenameV1(rw http.ResponseWriter, r *http.Request) 
 		return httperror.BadRequest("Invalid request payload", err)
 	}
 
-	payload.CurrentFilePath, err = filesystem.BuildPathToFileInsideVolume(volumeID, payload.CurrentFilePath)
+	payload.CurrentFilePath, err = resolveVolumePathFunc(volumeID, payload.CurrentFilePath)
 	if err != nil {
+		if errors.Is(err, filesystem.ErrSystemVolumePathNotMounted) {
+			return httperror.InternalServerError("Volume path not mounted", err)
+		}
 		return httperror.BadRequest("Invalid volume", err)
 	}
-	payload.NewFilePath, err = filesystem.BuildPathToFileInsideVolume(volumeID, payload.NewFilePath)
+	payload.NewFilePath, err = resolveVolumePathFunc(volumeID, payload.NewFilePath)
 	if err != nil {
 		return httperror.BadRequest("Invalid volume", err)
 	}

@@ -1,6 +1,7 @@
 package browse
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/portainer/agent/filesystem"
@@ -18,8 +19,11 @@ func (handler *Handler) browseGet(rw http.ResponseWriter, r *http.Request) *http
 	}
 
 	if volumeID != "" {
-		path, err = filesystem.BuildPathToFileInsideVolume(volumeID, path)
+		path, err = resolveVolumePathFunc(volumeID, path)
 		if err != nil {
+			if errors.Is(err, filesystem.ErrSystemVolumePathNotMounted) {
+				return httperror.InternalServerError("Volume path not mounted", err)
+			}
 			return httperror.BadRequest("Invalid volume", err)
 		}
 	}
@@ -48,8 +52,11 @@ func (handler *Handler) browseGetV1(rw http.ResponseWriter, r *http.Request) *ht
 		return httperror.BadRequest("Invalid query parameter: path", err)
 	}
 
-	path, err = filesystem.BuildPathToFileInsideVolume(volumeID, path)
+	path, err = resolveVolumePathFunc(volumeID, path)
 	if err != nil {
+		if errors.Is(err, filesystem.ErrSystemVolumePathNotMounted) {
+			return httperror.InternalServerError("Volume path not mounted", err)
+		}
 		return httperror.BadRequest("Invalid path", err)
 	}
 

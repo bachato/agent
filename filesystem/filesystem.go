@@ -143,6 +143,11 @@ func WriteBigFile(folder, filename string, srcfile multipart.File, mode uint32) 
 	return err
 }
 
+// ErrSystemVolumePathNotMounted is returned when the volume mountpoint cannot
+// be accessed via /host, indicating the Docker data root has been changed and
+// the agent needs to be reinstalled with the correct -v mapping.
+var ErrSystemVolumePathNotMounted = errors.New("volume path not mounted")
+
 // BuildPathToFileInsideVolume will take a volumeID and path, and build a full path on the host
 func BuildPathToFileInsideVolume(volumeID, filePath string) (string, error) {
 	if !isValidPath(filePath) {
@@ -150,6 +155,32 @@ func BuildPathToFileInsideVolume(volumeID, filePath string) (string, error) {
 	}
 
 	return path.Join(constants.SystemVolumePath, volumeID, "_data", filePath), nil
+}
+
+// BuildPathToFileInsideVolumeFromMountpoint builds the host-accessible path to a
+// file inside a volume using the volume's Mountpoint reported by the Docker daemon.
+//
+// The agent has the host root mounted at /host (-v /:/host). It first checks
+// /host/<mountpoint>. If that directory exists, it is used as the base path.
+// If it does not exist, ErrSystemVolumePathNotMounted is returned to signal that
+// the Docker data root has been changed and the user must reinstall the agent
+// with the correct -v bind mount.
+func BuildPathToFileInsideVolumeFromMountpoint(mountpoint, filePath string) (string, error) {
+	if !isValidPath(filePath) {
+		return "", errors.New("Invalid path. Ensure that the path do not contain '..' elements")
+	}
+
+	hostMountpoint := path.Join("/host", mountpoint)
+
+	exists, err := FileExists(hostMountpoint)
+	if err != nil {
+		return "", err
+	}
+	if !exists {
+		return "", ErrSystemVolumePathNotMounted
+	}
+
+	return path.Join(hostMountpoint, filePath), nil
 }
 
 func isValidPath(path string) bool {

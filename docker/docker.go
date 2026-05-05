@@ -166,6 +166,21 @@ func NewClientWithoutTimeout() (*client.Client, error) {
 	)
 }
 
+// GetVolumeMountpoint returns the Mountpoint of the named volume as reported
+// by the Docker daemon (e.g. /mnt/docker-data/volumes/test_volume/_data).
+func GetVolumeMountpoint(volumeID string) (string, error) {
+	var mountpoint string
+	err := withCli(func(cli *client.Client) error {
+		vol, err := cli.VolumeInspect(context.Background(), volumeID)
+		if err != nil {
+			return err
+		}
+		mountpoint = vol.Mountpoint
+		return nil
+	})
+	return mountpoint, err
+}
+
 func withCli(callback func(cli *client.Client) error) error {
 	cli, err := NewClient()
 	if err != nil {

@@ -9,6 +9,10 @@ import (
 	httperror "github.com/portainer/portainer/pkg/libhttp/error"
 )
 
+// resolveVolumePathFunc is a package-level indirection to allow tests to stub
+// the volume path resolution without a live Docker daemon.
+var resolveVolumePathFunc = resolveVolumePath
+
 // Handler is the HTTP handler used to handle volume browsing operations.
 type Handler struct {
 	*mux.Router

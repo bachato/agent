@@ -54,8 +54,11 @@ func (handler *Handler) browsePut(rw http.ResponseWriter, r *http.Request) *http
 	}
 
 	if volumeID != "" {
-		payload.Path, err = filesystem.BuildPathToFileInsideVolume(volumeID, payload.Path)
+		payload.Path, err = resolveVolumePathFunc(volumeID, payload.Path)
 		if err != nil {
+			if errors.Is(err, filesystem.ErrSystemVolumePathNotMounted) {
+				return httperror.InternalServerError("Volume path not mounted", err)
+			}
 			return httperror.BadRequest("Invalid volume", err)
 		}
 
@@ -85,8 +88,11 @@ func (handler *Handler) browsePutV1(rw http.ResponseWriter, r *http.Request) *ht
 	if err != nil {
 		return httperror.BadRequest("Invalid request payload", err)
 	}
-	payload.Path, err = filesystem.BuildPathToFileInsideVolume(volumeID, payload.Path)
+	payload.Path, err = resolveVolumePathFunc(volumeID, payload.Path)
 	if err != nil {
+		if errors.Is(err, filesystem.ErrSystemVolumePathNotMounted) {
+			return httperror.InternalServerError("Volume path not mounted", err)
+		}
 		return httperror.BadRequest("Invalid volume", err)
 	}
 
