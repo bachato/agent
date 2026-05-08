@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/portainer/agent/constants"
 	"github.com/stretchr/testify/require"
 )
 
@@ -70,31 +71,35 @@ func TestBuildPathToFileInsideVolume(t *testing.T) {
 func TestBuildPathToFileInsideVolumeFromMountpoint(t *testing.T) {
 	t.Parallel()
 
-	t.Run("mountpoint exists under /host", func(t *testing.T) {
+	t.Run("direct mountpoint exists (-v /var/lib/docker/volumes:/var/lib/docker/volumes)", func(t *testing.T) {
 		t.Parallel()
 
-		// Simulate /host/<mountpoint> by creating a temp dir and overriding
-		// the path so that /host prefix points into our temp root.
-		hostRoot := t.TempDir()
-		mountpoint := "/mnt/docker-data/volumes/test_volume/_data"
-		hostMountpoint := filepath.Join(hostRoot, mountpoint)
+		// Simulate the volumes-only mount: the mountpoint path exists directly
+		// inside the container at the same path as on the host.
+		root := t.TempDir()
+		mountpoint := filepath.Join(root, constants.SystemVolumePath, "test_volume", "_data")
+		require.NoError(t, os.MkdirAll(mountpoint, 0o755))
 
-		require.NoError(t, os.MkdirAll(hostMountpoint, 0o755))
-
-		// Monkey-patch: we call the internal helper directly with the temp path
-		// to avoid needing the real /host path.
-		exists, err := FileExists(hostMountpoint)
+		got, err := BuildPathToFileInsideVolumeFromMountpoint(mountpoint, "myfile.txt")
 		require.NoError(t, err)
-		require.True(t, exists)
-
-		got := filepath.Join(hostMountpoint, "myfile.txt")
-		require.Equal(t, hostMountpoint+"/myfile.txt", got)
+		require.Equal(t, filepath.Join(mountpoint, "myfile.txt"), got)
 	})
 
-	t.Run("mountpoint does not exist under /host — returns ErrSystemVolumePathNotMounted", func(t *testing.T) {
+	t.Run("direct mountpoint exists, empty filePath", func(t *testing.T) {
 		t.Parallel()
 
-		// Use a mountpoint that is guaranteed not to exist on the host.
+		root := t.TempDir()
+		mountpoint := filepath.Join(root, constants.SystemVolumePath, "test_volume", "_data")
+		require.NoError(t, os.MkdirAll(mountpoint, 0o755))
+
+		got, err := BuildPathToFileInsideVolumeFromMountpoint(mountpoint, "")
+		require.NoError(t, err)
+		require.Equal(t, mountpoint, got)
+	})
+
+	t.Run("neither direct nor /host mountpoint exists — returns ErrSystemVolumePathNotMounted", func(t *testing.T) {
+		t.Parallel()
+
 		_, err := BuildPathToFileInsideVolumeFromMountpoint("/nonexistent/mountpoint/that/cannot/exist", "file.txt")
 		require.ErrorIs(t, err, ErrSystemVolumePathNotMounted)
 	})
@@ -107,17 +112,51 @@ func TestBuildPathToFileInsideVolumeFromMountpoint(t *testing.T) {
 		require.NotErrorIs(t, err, ErrSystemVolumePathNotMounted)
 	})
 
-	t.Run("empty filePath with existing mountpoint", func(t *testing.T) {
+	t.Run("FileExists error on direct mountpoint — error propagated", func(t *testing.T) {
 		t.Parallel()
 
-		hostRoot := t.TempDir()
-		mountpoint := "/mnt/docker-data/volumes/test_volume/_data"
-		hostMountpoint := filepath.Join(hostRoot, mountpoint)
+		// Use a file as a path component so os.Stat returns a real error (not IsNotExist).
+		dir := t.TempDir()
+		file := filepath.Join(dir, "notadir")
+		require.NoError(t, os.WriteFile(file, []byte{}, 0o600))
+
+		_, err := buildPathToFileInsideVolumeFromMountpoint(filepath.Join(file, "child"), "file.txt", dir)
+		require.Error(t, err)
+		require.NotErrorIs(t, err, ErrSystemVolumePathNotMounted)
+	})
+
+	t.Run("FileExists error on host mountpoint — error propagated", func(t *testing.T) {
+		t.Parallel()
+
+		// Direct mountpoint does not exist (nonexistent dir), but the host-prefixed
+		// path hits a file used as a directory component, triggering a real error.
+		dir := t.TempDir()
+		file := filepath.Join(dir, "notadir")
+		require.NoError(t, os.WriteFile(file, []byte{}, 0o600))
+
+		// hostPrefix = file (a regular file), so path.Join(file, mountpoint) will
+		// cause os.Stat to fail with a non-IsNotExist error.
+		_, err := buildPathToFileInsideVolumeFromMountpoint("/nonexistent/mountpoint", "file.txt", file)
+		require.Error(t, err)
+		require.NotErrorIs(t, err, ErrSystemVolumePathNotMounted)
+	})
+
+	t.Run("/host mountpoint exists — correct path returned", func(t *testing.T) {
+		t.Parallel()
+
+		// Direct mountpoint does not exist; host-prefixed mountpoint does.
+		// Use a mountpoint path rooted inside a temp dir so the direct stat
+		// returns "not found" (not a permission error), then place the actual
+		// directory under hostPrefix so the /host lookup succeeds.
+		base := t.TempDir()
+		mountpoint := filepath.Join(base, "volumes", "test_volume", "_data")
+		hostPrefix := t.TempDir()
+		hostMountpoint := filepath.Join(hostPrefix, mountpoint)
 		require.NoError(t, os.MkdirAll(hostMountpoint, 0o755))
 
-		// Verify the path join behaviour directly since we can't inject /host.
-		expected := filepath.Join(hostMountpoint, "")
-		require.Equal(t, expected, hostMountpoint)
+		got, err := buildPathToFileInsideVolumeFromMountpoint(mountpoint, "myfile.txt", hostPrefix)
+		require.NoError(t, err)
+		require.Equal(t, filepath.Join(hostMountpoint, "myfile.txt"), got)
 	})
 }
 

@@ -160,27 +160,43 @@ func BuildPathToFileInsideVolume(volumeID, filePath string) (string, error) {
 // BuildPathToFileInsideVolumeFromMountpoint builds the host-accessible path to a
 // file inside a volume using the volume's Mountpoint reported by the Docker daemon.
 //
-// The agent has the host root mounted at /host (-v /:/host). It first checks
-// /host/<mountpoint>. If that directory exists, it is used as the base path.
-// If it does not exist, ErrSystemVolumePathNotMounted is returned to signal that
-// the Docker data root has been changed and the user must reinstall the agent
-// with the correct -v bind mount.
+// It tries two locations in order:
+//  1. <mountpoint> directly — when the volumes directory is bind-mounted at the
+//     same path (e.g. -v /var/lib/docker/volumes:/var/lib/docker/volumes)
+//  2. /host/<mountpoint> — when the host root is bind-mounted at /host
+//     (e.g. -v /:/host), needed for non-standard Docker data roots
+//
+// Returns ErrSystemVolumePathNotMounted if neither path exists.
 func BuildPathToFileInsideVolumeFromMountpoint(mountpoint, filePath string) (string, error) {
+	return buildPathToFileInsideVolumeFromMountpoint(mountpoint, filePath, "/host")
+}
+
+// buildPathToFileInsideVolumeFromMountpoint is the testable core of BuildPathToFileInsideVolumeFromMountpoint.
+// hostPrefix is injected so tests can substitute a temp directory for "/host" without needing real host mounts.
+func buildPathToFileInsideVolumeFromMountpoint(mountpoint, filePath, hostPrefix string) (string, error) {
 	if !isValidPath(filePath) {
 		return "", errors.New("Invalid path. Ensure that the path do not contain '..' elements")
 	}
 
-	hostMountpoint := path.Join("/host", mountpoint)
-
-	exists, err := FileExists(hostMountpoint)
+	exists, err := FileExists(mountpoint)
 	if err != nil {
 		return "", err
 	}
-	if !exists {
-		return "", ErrSystemVolumePathNotMounted
+	if exists {
+		return path.Join(mountpoint, filePath), nil
 	}
 
-	return path.Join(hostMountpoint, filePath), nil
+	hostMountpoint := path.Join(hostPrefix, mountpoint)
+
+	exists, err = FileExists(hostMountpoint)
+	if err != nil {
+		return "", err
+	}
+	if exists {
+		return path.Join(hostMountpoint, filePath), nil
+	}
+
+	return "", ErrSystemVolumePathNotMounted
 }
 
 func isValidPath(path string) bool {
