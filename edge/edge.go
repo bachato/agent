@@ -118,7 +118,7 @@ func (manager *Manager) Start() error {
 		manager.agentOptions.EdgeAsyncMode,
 		agentPlatform,
 		manager.agentOptions.EdgeMetaFields,
-		client.BuildHTTPClient(30, manager.agentOptions),
+		client.BuildHTTPClient(client.DefaultHTTPClientTimeoutSeconds, manager.agentOptions),
 	)
 
 	manager.stackManager = stack.NewStackManager(

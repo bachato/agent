@@ -161,3 +161,25 @@ func fileModified(filename string, mtime time.Time) bool {
 
 	return err == nil && stat.ModTime() != mtime
 }
+
+// TunnelProbeURL converts a chisel server address to an HTTP/HTTPS URL suitable
+// for a connectivity probe, applying the same normalisation that CreateTunnel uses.
+// Bare addresses (no scheme) are treated as http://, matching chisel's default.
+// In FIPS mode, all addresses are forced to https://, matching CreateTunnel's behaviour.
+func TunnelProbeURL(addr string) string {
+	return tunnelProbeURL(addr, fips.FIPSMode())
+}
+
+func tunnelProbeURL(addr string, fipsMode bool) string {
+	addr = strings.TrimSpace(addr)
+	if fipsMode {
+		addr = replaceSchemaWithHTTPS(addr)
+		return strings.Replace(addr, "wss://", "https://", 1)
+	}
+	if !strings.Contains(addr, "://") {
+		return "http://" + addr
+	}
+	addr = strings.Replace(addr, "wss://", "https://", 1)
+	addr = strings.Replace(addr, "ws://", "http://", 1)
+	return addr
+}

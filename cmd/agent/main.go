@@ -81,6 +81,13 @@ func main() {
 		log.Info().Msg("Starting with FIPS mode enabled")
 	}
 
+	if options.EdgeConnectivityCheck {
+		if edge.HasServerConnectivity(options) {
+			goos.Exit(0)
+		}
+		goos.Exit(1)
+	}
+
 	// !Generic
 
 	// Docker & Podman

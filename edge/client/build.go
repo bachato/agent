@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"sync"
 	"time"
@@ -30,9 +31,14 @@ type edgeHTTPClient struct {
 	caMTime          time.Time
 	mu               sync.RWMutex
 	localAddr        *net.TCPAddr
+	proxyURL         *url.URL
 	verifiedChains   [][]*x509.Certificate // verifiedChains is used to store the verified certificate chains from the mTLS handshake
 	verifiedChainsMu sync.RWMutex
 }
+
+// DefaultHTTPClientTimeoutSeconds is the initial timeout used for edge client
+// requests before Portainer can provide a check-in interval.
+const DefaultHTTPClientTimeoutSeconds = 30
 
 func BuildHTTPClient(timeout float64, options *agent.Options) *edgeHTTPClient {
 	revokeService := revoke.NewService()
@@ -53,6 +59,28 @@ func BuildHTTPClient(timeout float64, options *agent.Options) *edgeHTTPClient {
 }
 
 func (c *edgeHTTPClient) Do(req *http.Request) (*http.Response, error) {
+	res, err := c.do(req)
+
+	// Check if the response is healthy, if so create a healthy file
+	if err == nil && res.StatusCode >= 200 && res.StatusCode < 400 {
+		if healthErr := health.SetHealthy(); healthErr != nil {
+			log.Error().Err(healthErr).Msg("failed to set healthy")
+		}
+		go updates.AgentUpdateCleanupOnce(context.Background())
+	} else {
+		if healthErr := health.SetUnHealthy(); healthErr != nil {
+			log.Error().Err(healthErr).Msg("failed to set unhealthy")
+		}
+	}
+
+	return res, err
+}
+
+func (c *edgeHTTPClient) DoConnectivityCheck(req *http.Request) (*http.Response, error) {
+	return c.do(req)
+}
+
+func (c *edgeHTTPClient) do(req *http.Request) (*http.Response, error) {
 	if c.certsNeedsRotation() {
 		log.Debug().Msg("reloading certificates")
 
@@ -75,24 +103,19 @@ func (c *edgeHTTPClient) Do(req *http.Request) (*http.Response, error) {
 
 	res, err := c.httpClient.Do(req)
 
-	// Check if the response is healthy, if so create a healthy file
-	if err == nil && 200 <= res.StatusCode && res.StatusCode < 400 {
-		if healthErr := health.SetHealthy(); healthErr != nil {
-			log.Error().Err(healthErr).Msg("failed to set healthy")
-		}
-		go updates.AgentUpdateCleanupOnce(context.Background())
-	} else {
-		if healthErr := health.SetUnHealthy(); healthErr != nil {
-			log.Error().Err(healthErr).Msg("failed to set unhealthy")
-		}
-	}
-
 	return res, err
 }
 
 func (c *edgeHTTPClient) SetLocalAddr(localAddr *net.TCPAddr) {
 	c.mu.Lock()
 	c.localAddr = localAddr
+	c.httpClient.Transport = c.buildTransport()
+	c.mu.Unlock()
+}
+
+func (c *edgeHTTPClient) SetProxy(proxyURL *url.URL) {
+	c.mu.Lock()
+	c.proxyURL = proxyURL
 	c.httpClient.Transport = c.buildTransport()
 	c.mu.Unlock()
 }
@@ -115,6 +138,10 @@ func (c *edgeHTTPClient) certsNeedsRotation() bool {
 
 func (c *edgeHTTPClient) buildTransport() *http.Transport {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
+
+	if c.proxyURL != nil {
+		transport.Proxy = http.ProxyURL(c.proxyURL)
+	}
 
 	if c.localAddr != nil {
 		transport.DialContext = (&net.Dialer{
