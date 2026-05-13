@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -201,7 +202,7 @@ func HasServerConnectivity(options *agent.Options) bool {
 			allPassed = false
 		} else {
 			resp, err := httpClient.DoConnectivityCheck(req)
-			if err != nil && !isTunnelProbeResponseParseError(err) {
+			if err != nil && errors.As(err, new(*net.OpError)) {
 				fmt.Printf("FAIL: Failed to reach Portainer tunnel server at %s: %v\n", params.tunnelAddr, err)
 				allPassed = false
 			} else {
@@ -215,11 +216,4 @@ func HasServerConnectivity(options *agent.Options) bool {
 	}
 
 	return allPassed
-}
-
-func isTunnelProbeResponseParseError(err error) bool {
-	errMessage := err.Error()
-
-	return strings.Contains(errMessage, "malformed HTTP response") ||
-		strings.Contains(errMessage, "malformed MIME header")
 }
