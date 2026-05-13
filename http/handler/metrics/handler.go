@@ -31,6 +31,8 @@ type Handler struct {
 	values            map[string]float64
 	nodeReady         *prometheusreg.GaugeVec
 	nodeUnschedulable *prometheusreg.GaugeVec
+	etcdHealthy       prometheusreg.Gauge
+	etcdHealthValid   prometheusreg.Gauge
 }
 
 // NewHandler creates a new metrics handler with a dedicated Prometheus registry.
@@ -48,6 +50,18 @@ func NewHandler() *Handler {
 	}, []string{"node"})
 	reg.MustRegister(nodeUnschedulable)
 
+	etcdHealthy := prometheusreg.NewGauge(prometheusreg.GaugeOpts{
+		Name: pkgmetrics.ClusterEtcdHealthyMetric,
+		Help: "1 if the API server can reach etcd, 0 otherwise",
+	})
+	reg.MustRegister(etcdHealthy)
+
+	etcdHealthValid := prometheusreg.NewGauge(prometheusreg.GaugeOpts{
+		Name: pkgmetrics.ClusterEtcdHealthValidMetric,
+		Help: "1 if etcd health is based on a definitive API server check, 0 otherwise",
+	})
+	reg.MustRegister(etcdHealthValid)
+
 	descriptors := make(map[string]*prometheusreg.Desc, len(metricNames))
 	for _, name := range metricNames {
 		descriptors[name] = prometheusreg.NewDesc(name, "Edge agent cluster metric: "+name, nil, nil)
@@ -58,6 +72,8 @@ func NewHandler() *Handler {
 		values:            make(map[string]float64),
 		nodeReady:         nodeReady,
 		nodeUnschedulable: nodeUnschedulable,
+		etcdHealthy:       etcdHealthy,
+		etcdHealthValid:   etcdHealthValid,
 	}
 	reg.MustRegister(h)
 
@@ -120,6 +136,23 @@ func (h *Handler) UpdateNodeMetrics(statuses []kubernetes.NodeReadyStatus) {
 func (h *Handler) ClearNodeMetrics() {
 	h.nodeReady.Reset()
 	h.nodeUnschedulable.Reset()
+}
+
+// UpdateEtcdMetrics sets the etcd health gauge.
+func (h *Handler) UpdateEtcdMetrics(healthy bool) {
+	if healthy {
+		h.etcdHealthy.Set(1)
+	} else {
+		h.etcdHealthy.Set(0)
+	}
+
+	h.etcdHealthValid.Set(1)
+}
+
+// ClearEtcdMetrics marks etcd health as indeterminate until a definitive
+// etcd check result is observed again.
+func (h *Handler) ClearEtcdMetrics() {
+	h.etcdHealthValid.Set(0)
 }
 
 // ClearMetrics removes the currently published metric snapshot.

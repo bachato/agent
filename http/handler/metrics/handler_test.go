@@ -46,7 +46,33 @@ func TestClearMetricsRemovesPublishedSnapshot(t *testing.T) {
 
 	body := serveMetrics(t, h)
 	require.NotContains(t, body, pkgmetrics.ClusterCPUUsageCoresMetric)
-	require.Empty(t, body)
+	require.Contains(t, body, pkgmetrics.ClusterEtcdHealthyMetric+" 0")
+	require.Contains(t, body, pkgmetrics.ClusterEtcdHealthValidMetric+" 0")
+}
+
+func TestUpdateEtcdMetricsSetsGauge(t *testing.T) {
+	h := NewHandler()
+
+	h.UpdateEtcdMetrics(true)
+	body := serveMetrics(t, h)
+	require.Contains(t, body, pkgmetrics.ClusterEtcdHealthyMetric+" 1")
+	require.Contains(t, body, pkgmetrics.ClusterEtcdHealthValidMetric+" 1")
+
+	h.UpdateEtcdMetrics(false)
+	body = serveMetrics(t, h)
+	require.Contains(t, body, pkgmetrics.ClusterEtcdHealthyMetric+" 0")
+	require.Contains(t, body, pkgmetrics.ClusterEtcdHealthValidMetric+" 1")
+}
+
+func TestClearEtcdMetricsMarksGaugeAsIndeterminate(t *testing.T) {
+	h := NewHandler()
+
+	h.UpdateEtcdMetrics(true)
+	require.Contains(t, serveMetrics(t, h), pkgmetrics.ClusterEtcdHealthValidMetric+" 1")
+
+	h.ClearEtcdMetrics()
+	body := serveMetrics(t, h)
+	require.Contains(t, body, pkgmetrics.ClusterEtcdHealthValidMetric+" 0")
 }
 
 func TestUpdateNodeMetricsReplacesPublishedSeries(t *testing.T) {

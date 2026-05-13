@@ -144,9 +144,11 @@ func TestPollPublishesAlertStateAfterReloadHandling(t *testing.T) {
 func TestPushPerformanceMetricsClearsSnapshotOnCollectionFailure(t *testing.T) {
 	oldCollectRawMetricsFn := collectRawMetricsFn
 	oldCollectNodeConditionsFn := collectNodeConditionsFn
+	oldCollectEtcdHealthFn := collectEtcdHealthFn
 	t.Cleanup(func() {
 		collectRawMetricsFn = oldCollectRawMetricsFn
 		collectNodeConditionsFn = oldCollectNodeConditionsFn
+		collectEtcdHealthFn = oldCollectEtcdHealthFn
 	})
 
 	manager := NewManager(&ManagerParameters{
@@ -160,6 +162,9 @@ func TestPushPerformanceMetricsClearsSnapshotOnCollectionFailure(t *testing.T) {
 
 	collectNodeConditionsFn = func(_ context.Context, _ *kubernetes.KubeClient) ([]kubernetes.NodeReadyStatus, error) {
 		return nil, errors.New("collect node conditions failed")
+	}
+	collectEtcdHealthFn = func(_ context.Context, _ *kubernetes.KubeClient) (bool, error) {
+		return false, nil
 	}
 
 	collectRawMetricsFn = func(_ context.Context, _ *kubernetes.KubeClient) (*kubernetes.ClusterRawMetrics, error) {
@@ -179,15 +184,18 @@ func TestPushPerformanceMetricsClearsSnapshotOnCollectionFailure(t *testing.T) {
 
 	body := serveMetrics(t, service.metricsHandler)
 	require.NotContains(t, body, pkgmetrics.ClusterCPUUsageCoresMetric)
-	require.Empty(t, body)
+	require.Contains(t, body, pkgmetrics.ClusterEtcdHealthyMetric+" 0")
+	require.Contains(t, body, pkgmetrics.ClusterEtcdHealthValidMetric+" 1")
 }
 
 func TestPushPerformanceMetricsUpdatesNodeReadinessWhenRawCollectionFails(t *testing.T) {
 	oldCollectRawMetricsFn := collectRawMetricsFn
 	oldCollectNodeConditionsFn := collectNodeConditionsFn
+	oldCollectEtcdHealthFn := collectEtcdHealthFn
 	t.Cleanup(func() {
 		collectRawMetricsFn = oldCollectRawMetricsFn
 		collectNodeConditionsFn = oldCollectNodeConditionsFn
+		collectEtcdHealthFn = oldCollectEtcdHealthFn
 	})
 
 	manager := NewManager(&ManagerParameters{
@@ -205,20 +213,27 @@ func TestPushPerformanceMetricsUpdatesNodeReadinessWhenRawCollectionFails(t *tes
 	collectNodeConditionsFn = func(_ context.Context, _ *kubernetes.KubeClient) ([]kubernetes.NodeReadyStatus, error) {
 		return []kubernetes.NodeReadyStatus{{Name: "node-a", Ready: false}}, nil
 	}
+	collectEtcdHealthFn = func(_ context.Context, _ *kubernetes.KubeClient) (bool, error) {
+		return true, nil
+	}
 
 	service.pushPerformanceMetrics(context.Background())
 
 	body := serveMetrics(t, service.metricsHandler)
 	require.NotContains(t, body, pkgmetrics.ClusterCPUUsageCoresMetric)
 	require.Contains(t, body, pkgmetrics.ClusterNodeReadyMetric+"{node=\"node-a\"} 0")
+	require.Contains(t, body, pkgmetrics.ClusterEtcdHealthyMetric+" 1")
+	require.Contains(t, body, pkgmetrics.ClusterEtcdHealthValidMetric+" 1")
 }
 
 func TestPushPerformanceMetricsClearsNodeReadinessOnNodeCollectionFailure(t *testing.T) {
 	oldCollectRawMetricsFn := collectRawMetricsFn
 	oldCollectNodeConditionsFn := collectNodeConditionsFn
+	oldCollectEtcdHealthFn := collectEtcdHealthFn
 	t.Cleanup(func() {
 		collectRawMetricsFn = oldCollectRawMetricsFn
 		collectNodeConditionsFn = oldCollectNodeConditionsFn
+		collectEtcdHealthFn = oldCollectEtcdHealthFn
 	})
 
 	manager := NewManager(&ManagerParameters{
@@ -240,6 +255,9 @@ func TestPushPerformanceMetricsClearsNodeReadinessOnNodeCollectionFailure(t *tes
 	collectNodeConditionsFn = func(_ context.Context, _ *kubernetes.KubeClient) ([]kubernetes.NodeReadyStatus, error) {
 		return []kubernetes.NodeReadyStatus{{Name: "node-a", Ready: true}}, nil
 	}
+	collectEtcdHealthFn = func(_ context.Context, _ *kubernetes.KubeClient) (bool, error) {
+		return true, nil
+	}
 
 	service.pushPerformanceMetrics(context.Background())
 	require.Contains(t, serveMetrics(t, service.metricsHandler), pkgmetrics.ClusterNodeReadyMetric+"{node=\"node-a\"} 1")
@@ -252,6 +270,57 @@ func TestPushPerformanceMetricsClearsNodeReadinessOnNodeCollectionFailure(t *tes
 	body := serveMetrics(t, service.metricsHandler)
 	require.Contains(t, body, pkgmetrics.ClusterCPUUsageCoresMetric)
 	require.NotContains(t, body, pkgmetrics.ClusterNodeReadyMetric)
+	require.Contains(t, body, pkgmetrics.ClusterEtcdHealthyMetric+" 1")
+	require.Contains(t, body, pkgmetrics.ClusterEtcdHealthValidMetric+" 1")
+}
+
+func TestPushPerformanceMetricsSkipsEtcdUpdateOnCollectionFailure(t *testing.T) {
+	oldCollectRawMetricsFn := collectRawMetricsFn
+	oldCollectNodeConditionsFn := collectNodeConditionsFn
+	oldCollectEtcdHealthFn := collectEtcdHealthFn
+	t.Cleanup(func() {
+		collectRawMetricsFn = oldCollectRawMetricsFn
+		collectNodeConditionsFn = oldCollectNodeConditionsFn
+		collectEtcdHealthFn = oldCollectEtcdHealthFn
+	})
+
+	manager := NewManager(&ManagerParameters{
+		Options:           &agent.Options{DataPath: t.TempDir()},
+		ContainerPlatform: agent.PlatformKubernetes,
+	})
+	service := &PollService{
+		edgeManager:    manager,
+		metricsHandler: manager.MetricsHandler(),
+	}
+
+	collectRawMetricsFn = func(_ context.Context, _ *kubernetes.KubeClient) (*kubernetes.ClusterRawMetrics, error) {
+		return &kubernetes.ClusterRawMetrics{
+			HasCPU:               true,
+			CPUUsageNanoCores:    1_000_000_000,
+			CPUCapacityNanoCores: 2_000_000_000,
+		}, nil
+	}
+	collectNodeConditionsFn = func(_ context.Context, _ *kubernetes.KubeClient) ([]kubernetes.NodeReadyStatus, error) {
+		return []kubernetes.NodeReadyStatus{}, nil
+	}
+	collectEtcdHealthFn = func(_ context.Context, _ *kubernetes.KubeClient) (bool, error) {
+		return true, nil
+	}
+
+	service.pushPerformanceMetrics(context.Background())
+	body := serveMetrics(t, service.metricsHandler)
+	require.Contains(t, body, pkgmetrics.ClusterEtcdHealthyMetric+" 1")
+	require.Contains(t, body, pkgmetrics.ClusterEtcdHealthValidMetric+" 1")
+
+	collectEtcdHealthFn = func(_ context.Context, _ *kubernetes.KubeClient) (bool, error) {
+		return false, errors.New("collect etcd health failed")
+	}
+
+	service.pushPerformanceMetrics(context.Background())
+	body = serveMetrics(t, service.metricsHandler)
+	require.Contains(t, body, pkgmetrics.ClusterCPUUsageCoresMetric)
+	require.Contains(t, body, pkgmetrics.ClusterEtcdHealthyMetric+" 1")
+	require.Contains(t, body, pkgmetrics.ClusterEtcdHealthValidMetric+" 0")
 }
 
 func TestMaybeReloadRulesRetriesAfterFilesystemFailure(t *testing.T) {

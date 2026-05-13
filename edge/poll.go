@@ -43,6 +43,7 @@ const (
 
 var collectRawMetricsFn = kubernetes.CollectRawMetrics
 var collectNodeConditionsFn = kubernetes.CollectNodeConditions
+var collectEtcdHealthFn = kubernetes.CollectEtcdHealth
 
 func buildMetricsScrapeTarget(apiServerAddr string) string {
 	if host, port, err := net.SplitHostPort(apiServerAddr); err == nil {
@@ -558,6 +559,15 @@ func (service *PollService) pushPerformanceMetrics(ctx context.Context) {
 	} else {
 		service.metricsHandler.UpdateNodeMetrics(statuses)
 		log.Debug().Int("node_count", len(statuses)).Msg("metric-tick: node readiness gauges updated")
+	}
+
+	etcdHealthy, etcdErr := collectEtcdHealthFn(ctx, service.edgeManager.kubeClient)
+	if etcdErr != nil {
+		service.metricsHandler.ClearEtcdMetrics()
+		log.Debug().Err(etcdErr).Msg("metric-tick: etcd health indeterminate, marked gauge as unknown")
+	} else {
+		service.metricsHandler.UpdateEtcdMetrics(etcdHealthy)
+		log.Debug().Bool("healthy", etcdHealthy).Msg("metric-tick: etcd health gauge updated")
 	}
 
 }
