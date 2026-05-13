@@ -199,9 +199,9 @@ func (manager *StackManager) LoadExistingPortainerUpdaterEdgeStack(ctx context.C
 func (manager *StackManager) buildDeployerService(assetsPath string, engineStatus engineType) (deployer.Deployer, error) {
 	switch engineStatus {
 	case EngineTypeDockerStandalone:
-		return exec.NewDockerComposeStackService(assetsPath), nil
+		return exec.NewDockerComposeStackService(), nil
 	case EngineTypeDockerSwarm:
-		return exec.NewDockerSwarmStackService(assetsPath), nil
+		return exec.NewDockerSwarmStackService(), nil
 	case EngineTypeKubernetes:
 		return exec.NewKubernetesDeployer(manager.kubeClient), nil
 	}

@@ -48,7 +48,7 @@ services:
 		},
 	}
 
-	w := NewDockerSwarmStackService("")
+	w := NewDockerSwarmStackService()
 	dir := t.TempDir()
 
 	for _, testCase := range testCases {
