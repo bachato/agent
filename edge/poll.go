@@ -31,6 +31,7 @@ import (
 
 	prommodel "github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/rs/zerolog/log"
 )
 
@@ -690,7 +691,7 @@ func (service *PollService) maybeReloadRules() {
 	}
 
 	// Validate incoming YAML before writing to disk.
-	if _, errs := rulefmt.Parse([]byte(service.alertRulesYAML), false, prommodel.UTF8Validation); len(errs) > 0 {
+	if _, errs := rulefmt.Parse([]byte(service.alertRulesYAML), false, prommodel.UTF8Validation, parser.NewParser(parser.Options{})); len(errs) > 0 {
 		errMsg := "invalid alert rules YAML from server: " + errs[0].Error()
 		service.invalidAlertRulesHash = &h
 		log.Error().Str("error", errs[0].Error()).Msg("poll: received invalid alert rules YAML, skipping write")

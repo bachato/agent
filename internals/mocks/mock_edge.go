@@ -137,6 +137,18 @@ func (mr *MockPortainerClientMockRecorder) GetEnvironmentStatus(flags ...any) *g
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetEnvironmentStatus", reflect.TypeOf((*MockPortainerClient)(nil).GetEnvironmentStatus), flags...)
 }
 
+// SetAlertState mocks base method.
+func (m *MockPortainerClient) SetAlertState(state *metrics.EdgeAlertState) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SetAlertState", state)
+}
+
+// SetAlertState indicates an expected call of SetAlertState.
+func (mr *MockPortainerClientMockRecorder) SetAlertState(state any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetAlertState", reflect.TypeOf((*MockPortainerClient)(nil).SetAlertState), state)
+}
+
 // SetEdgeConfigState mocks base method.
 func (m *MockPortainerClient) SetEdgeConfigState(id client.EdgeConfigID, state client.EdgeConfigStateType) error {
 	m.ctrl.T.Helper()
@@ -189,18 +201,6 @@ func (m *MockPortainerClient) SetLastCommandTimestamp(timestamp time.Time) {
 func (mr *MockPortainerClientMockRecorder) SetLastCommandTimestamp(timestamp any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetLastCommandTimestamp", reflect.TypeOf((*MockPortainerClient)(nil).SetLastCommandTimestamp), timestamp)
-}
-
-// SetAlertState mocks base method.
-func (m *MockPortainerClient) SetAlertState(state *metrics.EdgeAlertState) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "SetAlertState", state)
-}
-
-// SetAlertState indicates an expected call of SetAlertState.
-func (mr *MockPortainerClientMockRecorder) SetAlertState(state any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetAlertState", reflect.TypeOf((*MockPortainerClient)(nil).SetAlertState), state)
 }
 
 // SetTimeout mocks base method.
