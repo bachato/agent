@@ -26,13 +26,14 @@ var metricNames = []string{
 type Handler struct {
 	handler http.Handler
 
-	mu                sync.RWMutex
-	descriptors       map[string]*prometheusreg.Desc
-	values            map[string]float64
-	nodeReady         *prometheusreg.GaugeVec
-	nodeUnschedulable *prometheusreg.GaugeVec
-	etcdHealthy       prometheusreg.Gauge
-	etcdHealthValid   prometheusreg.Gauge
+	mu                     sync.RWMutex
+	descriptors            map[string]*prometheusreg.Desc
+	values                 map[string]float64
+	nodeReady              *prometheusreg.GaugeVec
+	nodeUnschedulable      *prometheusreg.GaugeVec
+	etcdHealthy            prometheusreg.Gauge
+	etcdHealthValid        prometheusreg.Gauge
+	apiServerTLSCertExpiry *prometheusreg.GaugeVec
 }
 
 // NewHandler creates a new metrics handler with a dedicated Prometheus registry.
@@ -62,18 +63,25 @@ func NewHandler() *Handler {
 	})
 	reg.MustRegister(etcdHealthValid)
 
+	tlsCertExpiry := prometheusreg.NewGaugeVec(prometheusreg.GaugeOpts{
+		Name: pkgmetrics.ClusterAPIServerTLSCertExpirySecondsMetric,
+		Help: "Unix timestamp of TLS certificate NotAfter. Labels: source, cn.",
+	}, []string{"source", "cn"})
+	reg.MustRegister(tlsCertExpiry)
+
 	descriptors := make(map[string]*prometheusreg.Desc, len(metricNames))
 	for _, name := range metricNames {
 		descriptors[name] = prometheusreg.NewDesc(name, "Edge agent cluster metric: "+name, nil, nil)
 	}
 
 	h := &Handler{
-		descriptors:       descriptors,
-		values:            make(map[string]float64),
-		nodeReady:         nodeReady,
-		nodeUnschedulable: nodeUnschedulable,
-		etcdHealthy:       etcdHealthy,
-		etcdHealthValid:   etcdHealthValid,
+		descriptors:            descriptors,
+		values:                 make(map[string]float64),
+		nodeReady:              nodeReady,
+		nodeUnschedulable:      nodeUnschedulable,
+		etcdHealthy:            etcdHealthy,
+		etcdHealthValid:        etcdHealthValid,
+		apiServerTLSCertExpiry: tlsCertExpiry,
 	}
 	reg.MustRegister(h)
 
@@ -153,6 +161,20 @@ func (h *Handler) UpdateEtcdMetrics(healthy bool) {
 // etcd check result is observed again.
 func (h *Handler) ClearEtcdMetrics() {
 	h.etcdHealthValid.Set(0)
+}
+
+// UpdateAPIServerTLSCertMetrics sets per-certificate expiry gauges for the Kubernetes API server.
+func (h *Handler) UpdateAPIServerTLSCertMetrics(certs []kubernetes.TLSCertInfo) {
+	h.apiServerTLSCertExpiry.Reset()
+
+	for _, cert := range certs {
+		h.apiServerTLSCertExpiry.WithLabelValues(cert.Source, cert.CN).Set(float64(cert.NotAfter.Unix()))
+	}
+}
+
+// ClearAPIServerTLSCertMetrics removes all published API server TLS cert gauges.
+func (h *Handler) ClearAPIServerTLSCertMetrics() {
+	h.apiServerTLSCertExpiry.Reset()
 }
 
 // ClearMetrics removes the currently published metric snapshot.

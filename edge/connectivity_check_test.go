@@ -288,6 +288,25 @@ func TestCheckConnectivity_TunnelFail(t *testing.T) {
 	}
 }
 
+func TestCheckConnectivity_TunnelFailOnUnexpectedProbeError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	tunnelAddr := abruptCloseServerAddr(t)
+
+	opts := defaultOptions()
+	opts.EdgeConnectivityCheckURL = srv.URL
+	opts.EdgeConnectivityCheckTunnel = tunnelAddr
+	opts.EdgeInsecurePoll = true
+
+	ok := HasServerConnectivity(opts)
+	if ok {
+		t.Errorf("expected false when tunnel probe returns unexpected error, got %v", ok)
+	}
+}
+
 func TestCheckConnectivity_AsyncSkipsTunnel(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -483,6 +502,29 @@ func malformedHTTPHeaderServerAddr(t *testing.T) string {
 		defer func() { _ = conn.Close() }()
 
 		_, _ = conn.Write([]byte("HTTP/1.1 200 OK\r\nContent-Type\r\n\r\n"))
+	}()
+
+	return listener.Addr().String()
+}
+
+func abruptCloseServerAddr(t *testing.T) string {
+	t.Helper()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		_ = listener.Close()
+	})
+
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		_ = conn.Close()
 	}()
 
 	return listener.Addr().String()

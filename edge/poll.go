@@ -44,6 +44,7 @@ const (
 var collectRawMetricsFn = kubernetes.CollectRawMetrics
 var collectNodeConditionsFn = kubernetes.CollectNodeConditions
 var collectEtcdHealthFn = kubernetes.CollectEtcdHealth
+var collectAPIServerCertFn = kubernetes.CollectAPIServerCert
 
 func buildMetricsScrapeTarget(apiServerAddr string) string {
 	if host, port, err := net.SplitHostPort(apiServerAddr); err == nil {
@@ -568,6 +569,15 @@ func (service *PollService) pushPerformanceMetrics(ctx context.Context) {
 	} else {
 		service.metricsHandler.UpdateEtcdMetrics(etcdHealthy)
 		log.Debug().Bool("healthy", etcdHealthy).Msg("metric-tick: etcd health gauge updated")
+	}
+
+	cert, certErr := collectAPIServerCertFn(ctx, service.edgeManager.kubeClient)
+	if certErr != nil {
+		service.metricsHandler.ClearAPIServerTLSCertMetrics()
+		log.Warn().Err(certErr).Msg("metric-tick: failed to collect API server TLS cert, cleared tls cert gauges")
+	} else {
+		service.metricsHandler.UpdateAPIServerTLSCertMetrics([]kubernetes.TLSCertInfo{*cert})
+		log.Debug().Str("source", cert.Source).Str("cn", cert.CN).Msg("metric-tick: tls cert gauges updated")
 	}
 
 }

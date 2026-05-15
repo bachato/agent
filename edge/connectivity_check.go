@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -202,7 +201,7 @@ func HasServerConnectivity(options *agent.Options) bool {
 			allPassed = false
 		} else {
 			resp, err := httpClient.DoConnectivityCheck(req)
-			if err != nil && errors.As(err, new(*net.OpError)) {
+			if err != nil && !isBenignTunnelProbeError(err) {
 				fmt.Printf("FAIL: Failed to reach Portainer tunnel server at %s: %v\n", params.tunnelAddr, err)
 				allPassed = false
 			} else {
@@ -216,4 +215,16 @@ func HasServerConnectivity(options *agent.Options) bool {
 	}
 
 	return allPassed
+}
+
+func isBenignTunnelProbeError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errText := strings.ToLower(err.Error())
+
+	// A malformed MIME header means TCP reachability is good and the remote
+	// endpoint responded with bytes, which is sufficient for this connectivity probe.
+	return strings.Contains(errText, "malformed mime header")
 }

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/portainer/agent"
 	"github.com/portainer/agent/edge/client"
@@ -145,10 +146,12 @@ func TestPushPerformanceMetricsClearsSnapshotOnCollectionFailure(t *testing.T) {
 	oldCollectRawMetricsFn := collectRawMetricsFn
 	oldCollectNodeConditionsFn := collectNodeConditionsFn
 	oldCollectEtcdHealthFn := collectEtcdHealthFn
+	oldCollectAPIServerCertFn := collectAPIServerCertFn
 	t.Cleanup(func() {
 		collectRawMetricsFn = oldCollectRawMetricsFn
 		collectNodeConditionsFn = oldCollectNodeConditionsFn
 		collectEtcdHealthFn = oldCollectEtcdHealthFn
+		collectAPIServerCertFn = oldCollectAPIServerCertFn
 	})
 
 	manager := NewManager(&ManagerParameters{
@@ -174,6 +177,9 @@ func TestPushPerformanceMetricsClearsSnapshotOnCollectionFailure(t *testing.T) {
 			CPUCapacityNanoCores: 4_000_000_000,
 		}, nil
 	}
+	collectAPIServerCertFn = func(_ context.Context, _ *kubernetes.KubeClient) (*kubernetes.TLSCertInfo, error) {
+		return nil, errors.New("collect tls cert failed")
+	}
 	service.pushPerformanceMetrics(context.Background())
 	require.Contains(t, serveMetrics(t, service.metricsHandler), pkgmetrics.ClusterCPUUsageCoresMetric)
 
@@ -192,10 +198,12 @@ func TestPushPerformanceMetricsUpdatesNodeReadinessWhenRawCollectionFails(t *tes
 	oldCollectRawMetricsFn := collectRawMetricsFn
 	oldCollectNodeConditionsFn := collectNodeConditionsFn
 	oldCollectEtcdHealthFn := collectEtcdHealthFn
+	oldCollectAPIServerCertFn := collectAPIServerCertFn
 	t.Cleanup(func() {
 		collectRawMetricsFn = oldCollectRawMetricsFn
 		collectNodeConditionsFn = oldCollectNodeConditionsFn
 		collectEtcdHealthFn = oldCollectEtcdHealthFn
+		collectAPIServerCertFn = oldCollectAPIServerCertFn
 	})
 
 	manager := NewManager(&ManagerParameters{
@@ -216,6 +224,9 @@ func TestPushPerformanceMetricsUpdatesNodeReadinessWhenRawCollectionFails(t *tes
 	collectEtcdHealthFn = func(_ context.Context, _ *kubernetes.KubeClient) (bool, error) {
 		return true, nil
 	}
+	collectAPIServerCertFn = func(_ context.Context, _ *kubernetes.KubeClient) (*kubernetes.TLSCertInfo, error) {
+		return nil, errors.New("collect tls cert failed")
+	}
 
 	service.pushPerformanceMetrics(context.Background())
 
@@ -230,10 +241,12 @@ func TestPushPerformanceMetricsClearsNodeReadinessOnNodeCollectionFailure(t *tes
 	oldCollectRawMetricsFn := collectRawMetricsFn
 	oldCollectNodeConditionsFn := collectNodeConditionsFn
 	oldCollectEtcdHealthFn := collectEtcdHealthFn
+	oldCollectAPIServerCertFn := collectAPIServerCertFn
 	t.Cleanup(func() {
 		collectRawMetricsFn = oldCollectRawMetricsFn
 		collectNodeConditionsFn = oldCollectNodeConditionsFn
 		collectEtcdHealthFn = oldCollectEtcdHealthFn
+		collectAPIServerCertFn = oldCollectAPIServerCertFn
 	})
 
 	manager := NewManager(&ManagerParameters{
@@ -257,6 +270,9 @@ func TestPushPerformanceMetricsClearsNodeReadinessOnNodeCollectionFailure(t *tes
 	}
 	collectEtcdHealthFn = func(_ context.Context, _ *kubernetes.KubeClient) (bool, error) {
 		return true, nil
+	}
+	collectAPIServerCertFn = func(_ context.Context, _ *kubernetes.KubeClient) (*kubernetes.TLSCertInfo, error) {
+		return nil, errors.New("collect tls cert failed")
 	}
 
 	service.pushPerformanceMetrics(context.Background())
@@ -321,6 +337,93 @@ func TestPushPerformanceMetricsSkipsEtcdUpdateOnCollectionFailure(t *testing.T) 
 	require.Contains(t, body, pkgmetrics.ClusterCPUUsageCoresMetric)
 	require.Contains(t, body, pkgmetrics.ClusterEtcdHealthyMetric+" 1")
 	require.Contains(t, body, pkgmetrics.ClusterEtcdHealthValidMetric+" 0")
+}
+
+func TestPushPerformanceMetricsUpdatesTLSCertGaugeOnSuccess(t *testing.T) {
+	oldCollectRawMetricsFn := collectRawMetricsFn
+	oldCollectNodeConditionsFn := collectNodeConditionsFn
+	oldCollectEtcdHealthFn := collectEtcdHealthFn
+	oldCollectAPIServerCertFn := collectAPIServerCertFn
+	t.Cleanup(func() {
+		collectRawMetricsFn = oldCollectRawMetricsFn
+		collectNodeConditionsFn = oldCollectNodeConditionsFn
+		collectEtcdHealthFn = oldCollectEtcdHealthFn
+		collectAPIServerCertFn = oldCollectAPIServerCertFn
+	})
+
+	manager := NewManager(&ManagerParameters{
+		Options:           &agent.Options{DataPath: t.TempDir()},
+		ContainerPlatform: agent.PlatformKubernetes,
+	})
+	service := &PollService{
+		edgeManager:    manager,
+		metricsHandler: manager.MetricsHandler(),
+	}
+
+	collectRawMetricsFn = func(_ context.Context, _ *kubernetes.KubeClient) (*kubernetes.ClusterRawMetrics, error) {
+		return nil, errors.New("collect raw metrics failed")
+	}
+	collectNodeConditionsFn = func(_ context.Context, _ *kubernetes.KubeClient) ([]kubernetes.NodeReadyStatus, error) {
+		return nil, errors.New("collect node conditions failed")
+	}
+	collectEtcdHealthFn = func(_ context.Context, _ *kubernetes.KubeClient) (bool, error) {
+		return false, errors.New("collect etcd health failed")
+	}
+	collectAPIServerCertFn = func(_ context.Context, _ *kubernetes.KubeClient) (*kubernetes.TLSCertInfo, error) {
+		return &kubernetes.TLSCertInfo{Source: "apiserver", CN: "kube-apiserver", NotAfter: time.Unix(1_900_000_000, 0)}, nil
+	}
+
+	service.pushPerformanceMetrics(context.Background())
+	body := serveMetrics(t, service.metricsHandler)
+	require.Contains(t, body, pkgmetrics.ClusterAPIServerTLSCertExpirySecondsMetric)
+	require.Contains(t, body, "cn=\"kube-apiserver\"")
+	require.Contains(t, body, "source=\"apiserver\"")
+}
+
+func TestPushPerformanceMetricsClearsTLSCertGaugeOnCollectionFailure(t *testing.T) {
+	oldCollectRawMetricsFn := collectRawMetricsFn
+	oldCollectNodeConditionsFn := collectNodeConditionsFn
+	oldCollectEtcdHealthFn := collectEtcdHealthFn
+	oldCollectAPIServerCertFn := collectAPIServerCertFn
+	t.Cleanup(func() {
+		collectRawMetricsFn = oldCollectRawMetricsFn
+		collectNodeConditionsFn = oldCollectNodeConditionsFn
+		collectEtcdHealthFn = oldCollectEtcdHealthFn
+		collectAPIServerCertFn = oldCollectAPIServerCertFn
+	})
+
+	manager := NewManager(&ManagerParameters{
+		Options:           &agent.Options{DataPath: t.TempDir()},
+		ContainerPlatform: agent.PlatformKubernetes,
+	})
+	service := &PollService{
+		edgeManager:    manager,
+		metricsHandler: manager.MetricsHandler(),
+	}
+
+	collectRawMetricsFn = func(_ context.Context, _ *kubernetes.KubeClient) (*kubernetes.ClusterRawMetrics, error) {
+		return nil, errors.New("collect raw metrics failed")
+	}
+	collectNodeConditionsFn = func(_ context.Context, _ *kubernetes.KubeClient) ([]kubernetes.NodeReadyStatus, error) {
+		return nil, errors.New("collect node conditions failed")
+	}
+	collectEtcdHealthFn = func(_ context.Context, _ *kubernetes.KubeClient) (bool, error) {
+		return false, errors.New("collect etcd health failed")
+	}
+	collectAPIServerCertFn = func(_ context.Context, _ *kubernetes.KubeClient) (*kubernetes.TLSCertInfo, error) {
+		return &kubernetes.TLSCertInfo{Source: "apiserver", CN: "kube-apiserver", NotAfter: time.Unix(1_900_000_000, 0)}, nil
+	}
+
+	service.pushPerformanceMetrics(context.Background())
+	require.Contains(t, serveMetrics(t, service.metricsHandler), pkgmetrics.ClusterAPIServerTLSCertExpirySecondsMetric)
+
+	collectAPIServerCertFn = func(_ context.Context, _ *kubernetes.KubeClient) (*kubernetes.TLSCertInfo, error) {
+		return nil, errors.New("collect tls cert failed")
+	}
+
+	service.pushPerformanceMetrics(context.Background())
+	body := serveMetrics(t, service.metricsHandler)
+	require.NotContains(t, body, pkgmetrics.ClusterAPIServerTLSCertExpirySecondsMetric)
 }
 
 func TestMaybeReloadRulesRetriesAfterFilesystemFailure(t *testing.T) {

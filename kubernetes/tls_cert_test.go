@@ -1,0 +1,158 @@
+package kubernetes
+
+import (
+	"context"
+	"encoding/pem"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/portainer/portainer/pkg/fips"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"k8s.io/client-go/rest"
+)
+
+func TestCollectAPIServerCert(t *testing.T) {
+	fips.InitFIPS(false)
+
+	t.Run("returns error when kc is nil", func(t *testing.T) {
+		_, err := CollectAPIServerCert(context.Background(), nil)
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "kubernetes client is nil")
+	})
+
+	t.Run("returns error when kc.config is nil", func(t *testing.T) {
+		_, err := CollectAPIServerCert(context.Background(), &KubeClient{})
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "kubernetes client config is nil")
+	})
+
+	t.Run("returns cert details when API server cert is trusted", func(t *testing.T) {
+		server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		caData := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw})
+
+		kc := &KubeClient{config: &rest.Config{
+			Host: server.URL,
+			TLSClientConfig: rest.TLSClientConfig{
+				CAData: caData,
+			},
+		}}
+
+		cert, err := CollectAPIServerCert(context.Background(), kc)
+		require.NoError(t, err)
+		require.NotNil(t, cert)
+
+		expectedCN := strings.TrimSpace(server.Certificate().Subject.CommonName)
+		if expectedCN == "" {
+			expectedCN = "unknown"
+		}
+
+		assert.Equal(t, "apiserver", cert.Source)
+		assert.Equal(t, expectedCN, cert.CN)
+		assert.WithinDuration(t, server.Certificate().NotAfter, cert.NotAfter, time.Second)
+	})
+
+	t.Run("accepts portless URL and fails at connection not validation", func(t *testing.T) {
+		kc := &KubeClient{config: &rest.Config{Host: "https://kubernetes.default.svc"}}
+
+		_, err := CollectAPIServerCert(context.Background(), kc)
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "failed to dial kubernetes api server tls endpoint")
+	})
+
+	t.Run("returns cert details even when cert chain cannot be verified", func(t *testing.T) {
+		// InsecureSkipVerify is intentional: we inspect the cert's NotAfter field
+		// regardless of whether the cert is trusted or expired.
+		server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		kc := &KubeClient{config: &rest.Config{Host: server.URL}}
+
+		cert, err := CollectAPIServerCert(context.Background(), kc)
+		require.NoError(t, err)
+		require.NotNil(t, cert)
+
+		assert.Equal(t, "apiserver", cert.Source)
+		assert.WithinDuration(t, server.Certificate().NotAfter, cert.NotAfter, time.Second)
+	})
+}
+
+func TestBuildAPIServerTLSTarget(t *testing.T) {
+	tests := []struct {
+		name          string
+		host          string
+		expected      string
+		expectedErr   string
+	}{
+		{
+			name:     "defaults to 443 for dns host",
+			host:     "https://kubernetes.default.svc",
+			expected: "kubernetes.default.svc:443",
+		},
+		{
+			name:     "keeps explicit port for dns host",
+			host:     "https://kubernetes.default.svc:6443",
+			expected: "kubernetes.default.svc:6443",
+		},
+		{
+			name:     "defaults to 443 for ipv6 host",
+			host:     "https://[2001:db8::1]",
+			expected: "[2001:db8::1]:443",
+		},
+		{
+			name:     "keeps explicit port for ipv6 host",
+			host:     "https://[2001:db8::1]:6443",
+			expected: "[2001:db8::1]:6443",
+		},
+		{
+			name:        "invalid host",
+			host:        "https://",
+			expectedErr: "kubernetes api server host is invalid",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			parsedURL, err := resolveAPIServerURL(tc.host)
+			if tc.expectedErr != "" {
+				require.Error(t, err)
+				assert.ErrorContains(t, err, tc.expectedErr)
+				return
+			}
+
+			require.NoError(t, err)
+
+			target, err := buildAPIServerTLSTarget(parsedURL)
+			require.NoError(t, err)
+			assert.Equal(t, tc.expected, target)
+		})
+	}
+}
+
+func TestAsTLSConn(t *testing.T) {
+	t.Run("returns error when connection is nil", func(t *testing.T) {
+		_, err := asTLSConn(nil)
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "kubernetes api server connection is nil")
+	})
+
+	t.Run("returns error when connection is not tls", func(t *testing.T) {
+		connA, connB := net.Pipe()
+		defer connA.Close() //nolint:errcheck
+		defer connB.Close() //nolint:errcheck
+
+		_, err := asTLSConn(connA)
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "kubernetes api server connection is not tls")
+	})
+}

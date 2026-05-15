@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/portainer/agent/kubernetes"
 	pkgmetrics "github.com/portainer/portainer/pkg/metrics"
@@ -114,6 +115,63 @@ func TestClearNodeMetricsKeepsRawSnapshot(t *testing.T) {
 	require.Contains(t, body, pkgmetrics.ClusterCPUUsageCoresMetric)
 	require.NotContains(t, body, pkgmetrics.ClusterNodeReadyMetric)
 	require.NotContains(t, body, pkgmetrics.ClusterNodeUnschedulableMetric)
+}
+
+func TestUpdateTLSCertMetricsPublishesSeries(t *testing.T) {
+	h := NewHandler()
+	expiry := time.Unix(1_800_000_000, 0)
+
+	h.UpdateAPIServerTLSCertMetrics([]kubernetes.TLSCertInfo{{
+		Source:   "apiserver",
+		CN:       "kube-apiserver",
+		NotAfter: expiry,
+	}})
+
+	body := serveMetrics(t, h)
+	require.Contains(t, body, pkgmetrics.ClusterAPIServerTLSCertExpirySecondsMetric)
+	require.Contains(t, body, "source=\"apiserver\"")
+	require.Contains(t, body, "cn=\"kube-apiserver\"")
+}
+
+func TestUpdateTLSCertMetricsReplacesPublishedSeries(t *testing.T) {
+	h := NewHandler()
+
+	h.UpdateAPIServerTLSCertMetrics([]kubernetes.TLSCertInfo{{
+		Source:   "apiserver",
+		CN:       "old-cn",
+		NotAfter: time.Unix(1_800_000_000, 0),
+	}})
+
+	h.UpdateAPIServerTLSCertMetrics([]kubernetes.TLSCertInfo{{
+		Source:   "apiserver",
+		CN:       "new-cn",
+		NotAfter: time.Unix(1_900_000_000, 0),
+	}})
+
+	body := serveMetrics(t, h)
+	require.NotContains(t, body, "cn=\"old-cn\"")
+	require.Contains(t, body, "cn=\"new-cn\"")
+}
+
+func TestClearTLSCertMetricsRemovesPublishedSeries(t *testing.T) {
+	h := NewHandler()
+
+	h.UpdateMetrics(&kubernetes.ClusterRawMetrics{
+		HasCPU:               true,
+		CPUUsageNanoCores:    1_000_000_000,
+		CPUCapacityNanoCores: 2_000_000_000,
+	})
+	h.UpdateAPIServerTLSCertMetrics([]kubernetes.TLSCertInfo{{
+		Source:   "apiserver",
+		CN:       "kube-apiserver",
+		NotAfter: time.Unix(1_800_000_000, 0),
+	}})
+
+	h.ClearAPIServerTLSCertMetrics()
+
+	body := serveMetrics(t, h)
+	require.Contains(t, body, pkgmetrics.ClusterCPUUsageCoresMetric)
+	require.NotContains(t, body, pkgmetrics.ClusterAPIServerTLSCertExpirySecondsMetric)
 }
 
 func serveMetrics(t *testing.T, h *Handler) string {
