@@ -29,11 +29,14 @@ type Handler struct {
 	mu                     sync.RWMutex
 	descriptors            map[string]*prometheusreg.Desc
 	values                 map[string]float64
-	nodeReady              *prometheusreg.GaugeVec
-	nodeUnschedulable      *prometheusreg.GaugeVec
-	etcdHealthy            prometheusreg.Gauge
-	etcdHealthValid        prometheusreg.Gauge
-	apiServerTLSCertExpiry *prometheusreg.GaugeVec
+	nodeReady                  *prometheusreg.GaugeVec
+	nodeUnschedulable          *prometheusreg.GaugeVec
+	etcdHealthy                prometheusreg.Gauge
+	etcdHealthValid            prometheusreg.Gauge
+	apiServerTLSCertExpiry     *prometheusreg.GaugeVec
+	controlPlaneHealthy        *prometheusreg.GaugeVec
+	controlPlaneHealthValid    *prometheusreg.GaugeVec
+	apiServerHealthy           prometheusreg.Gauge
 }
 
 // NewHandler creates a new metrics handler with a dedicated Prometheus registry.
@@ -69,19 +72,40 @@ func NewHandler() *Handler {
 	}, []string{"source", "cn"})
 	reg.MustRegister(tlsCertExpiry)
 
+	controlPlaneHealthy := prometheusreg.NewGaugeVec(prometheusreg.GaugeOpts{
+		Name: pkgmetrics.ClusterControlPlaneHealthyMetric,
+		Help: "1 if the control plane component is healthy, 0 otherwise",
+	}, []string{"component"})
+	reg.MustRegister(controlPlaneHealthy)
+
+	controlPlaneHealthValid := prometheusreg.NewGaugeVec(prometheusreg.GaugeOpts{
+		Name: pkgmetrics.ClusterControlPlaneHealthValidMetric,
+		Help: "1 if control plane health is based on a definitive probe result, 0 otherwise",
+	}, []string{"component"})
+	reg.MustRegister(controlPlaneHealthValid)
+
+	apiServerHealthy := prometheusreg.NewGauge(prometheusreg.GaugeOpts{
+		Name: pkgmetrics.ClusterAPIServerHealthyMetric,
+		Help: "1 if the API server reports healthy on /livez, 0 otherwise",
+	})
+	reg.MustRegister(apiServerHealthy)
+
 	descriptors := make(map[string]*prometheusreg.Desc, len(metricNames))
 	for _, name := range metricNames {
 		descriptors[name] = prometheusreg.NewDesc(name, "Edge agent cluster metric: "+name, nil, nil)
 	}
 
 	h := &Handler{
-		descriptors:            descriptors,
-		values:                 make(map[string]float64),
-		nodeReady:              nodeReady,
-		nodeUnschedulable:      nodeUnschedulable,
-		etcdHealthy:            etcdHealthy,
-		etcdHealthValid:        etcdHealthValid,
-		apiServerTLSCertExpiry: tlsCertExpiry,
+		descriptors:             descriptors,
+		values:                  make(map[string]float64),
+		nodeReady:               nodeReady,
+		nodeUnschedulable:       nodeUnschedulable,
+		etcdHealthy:             etcdHealthy,
+		etcdHealthValid:         etcdHealthValid,
+		apiServerTLSCertExpiry:  tlsCertExpiry,
+		controlPlaneHealthy:     controlPlaneHealthy,
+		controlPlaneHealthValid: controlPlaneHealthValid,
+		apiServerHealthy:        apiServerHealthy,
 	}
 	reg.MustRegister(h)
 
@@ -120,23 +144,22 @@ func (h *Handler) UpdateMetrics(raw *kubernetes.ClusterRawMetrics) {
 	h.values = snapshot
 }
 
+func boolToFloat64(b bool) float64 {
+	if b {
+		return 1.0
+	}
+
+	return 0.0
+}
+
 // UpdateNodeMetrics sets per-node readiness and unschedulable gauges.
 func (h *Handler) UpdateNodeMetrics(statuses []kubernetes.NodeReadyStatus) {
 	h.nodeReady.Reset()
 	h.nodeUnschedulable.Reset()
 
 	for _, status := range statuses {
-		readyVal := 0.0
-		if status.Ready {
-			readyVal = 1.0
-		}
-		h.nodeReady.WithLabelValues(status.Name).Set(readyVal)
-
-		unschedulableVal := 0.0
-		if status.Unschedulable {
-			unschedulableVal = 1.0
-		}
-		h.nodeUnschedulable.WithLabelValues(status.Name).Set(unschedulableVal)
+		h.nodeReady.WithLabelValues(status.Name).Set(boolToFloat64(status.Ready))
+		h.nodeUnschedulable.WithLabelValues(status.Name).Set(boolToFloat64(status.Unschedulable))
 	}
 }
 
@@ -148,12 +171,7 @@ func (h *Handler) ClearNodeMetrics() {
 
 // UpdateEtcdMetrics sets the etcd health gauge.
 func (h *Handler) UpdateEtcdMetrics(healthy bool) {
-	if healthy {
-		h.etcdHealthy.Set(1)
-	} else {
-		h.etcdHealthy.Set(0)
-	}
-
+	h.etcdHealthy.Set(boolToFloat64(healthy))
 	h.etcdHealthValid.Set(1)
 }
 
@@ -175,6 +193,29 @@ func (h *Handler) UpdateAPIServerTLSCertMetrics(certs []kubernetes.TLSCertInfo) 
 // ClearAPIServerTLSCertMetrics removes all published API server TLS cert gauges.
 func (h *Handler) ClearAPIServerTLSCertMetrics() {
 	h.apiServerTLSCertExpiry.Reset()
+}
+
+// UpdateControlPlaneMetrics resets both control plane GaugeVecs then publishes
+// healthy and valid values for each component in statuses.
+func (h *Handler) UpdateControlPlaneMetrics(statuses []kubernetes.ComponentHealthStatus) {
+	h.controlPlaneHealthy.Reset()
+	h.controlPlaneHealthValid.Reset()
+
+	for _, status := range statuses {
+		h.controlPlaneHealthy.WithLabelValues(status.Component).Set(boolToFloat64(status.Healthy))
+		h.controlPlaneHealthValid.WithLabelValues(status.Component).Set(boolToFloat64(status.Valid))
+	}
+}
+
+// ClearControlPlaneMetrics removes all published control plane gauges.
+func (h *Handler) ClearControlPlaneMetrics() {
+	h.controlPlaneHealthy.Reset()
+	h.controlPlaneHealthValid.Reset()
+}
+
+// UpdateAPIServerHealthMetrics sets the API server health gauge.
+func (h *Handler) UpdateAPIServerHealthMetrics(healthy bool) {
+	h.apiServerHealthy.Set(boolToFloat64(healthy))
 }
 
 // ClearMetrics removes the currently published metric snapshot.

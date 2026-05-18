@@ -46,6 +46,8 @@ var collectRawMetricsFn = kubernetes.CollectRawMetrics
 var collectNodeConditionsFn = kubernetes.CollectNodeConditions
 var collectEtcdHealthFn = kubernetes.CollectEtcdHealth
 var collectAPIServerCertFn = kubernetes.CollectAPIServerCert
+var collectControlPlaneHealthFn = kubernetes.CollectControlPlaneHealth
+var collectAPIServerHealthFn = kubernetes.CollectAPIServerHealth
 
 func buildMetricsScrapeTarget(apiServerAddr string) string {
 	if host, port, err := net.SplitHostPort(apiServerAddr); err == nil {
@@ -581,6 +583,18 @@ func (service *PollService) pushPerformanceMetrics(ctx context.Context) {
 		log.Debug().Str("source", cert.Source).Str("cn", cert.CN).Msg("metric-tick: tls cert gauges updated")
 	}
 
+	cpStatuses, cpErr := collectControlPlaneHealthFn(ctx, service.edgeManager.kubeClient)
+	if cpErr != nil {
+		service.metricsHandler.ClearControlPlaneMetrics()
+		log.Debug().Err(cpErr).Msg("metric-tick: control plane health indeterminate, cleared gauges")
+	} else {
+		service.metricsHandler.UpdateControlPlaneMetrics(cpStatuses)
+		log.Debug().Int("component_count", len(cpStatuses)).Msg("metric-tick: control plane health gauges updated")
+	}
+
+	apiServerHealthy := collectAPIServerHealthFn(ctx, service.edgeManager.kubeClient)
+	service.metricsHandler.UpdateAPIServerHealthMetrics(apiServerHealthy)
+	log.Debug().Bool("healthy", apiServerHealthy).Msg("metric-tick: API server health gauge updated")
 }
 
 func (service *PollService) publishAlertState() {
