@@ -160,6 +160,51 @@ func TestProcessPolicyHelmCharts(t *testing.T) {
 		assert.Empty(t, manager.policyChartStatus["chart1"].Fingerprint, "Fingerprint should be cleared on failure to force retry")
 
 	})
+
+	t.Run("NoWait false defaults to Wait true", func(t *testing.T) {
+		helmMock := &mockHelmPackageManagerWithStatus{}
+		manager := NewPolicyManager(mockPortainerClient, mockKubeClient, helmMock)
+
+		chartSummaries := []portainer.PolicyChartSummary{
+			{ChartName: "chart1", Fingerprint: "fp1"},
+		}
+		chartBundle := portainer.PolicyChartBundle{
+			PolicyChartSummary: portainer.PolicyChartSummary{ChartName: "chart1", Fingerprint: "fp1"},
+			Namespace:          "default",
+			EncodedTgz:         base64.StdEncoding.EncodeToString([]byte("chart-data")),
+			EncodedValues:      base64.StdEncoding.EncodeToString([]byte("values-data")),
+		}
+
+		mockPortainerClient.EXPECT().GetCharts([]string{"chart1"}).Return([]portainer.PolicyChartBundle{chartBundle}, portainer.RestoreSettingsBundle{}, nil)
+		mockPortainerClient.EXPECT().UpdatePolicyChartStatuses(gomock.Any()).Return(nil)
+
+		manager.ProcessPolicyHelmCharts(chartSummaries)
+
+		assert.True(t, helmMock.capturedUpgradeOpts.Wait)
+	})
+
+	t.Run("NoWait true sets Wait false", func(t *testing.T) {
+		helmMock := &mockHelmPackageManagerWithStatus{}
+		manager := NewPolicyManager(mockPortainerClient, mockKubeClient, helmMock)
+
+		chartSummaries := []portainer.PolicyChartSummary{
+			{ChartName: "chart1", Fingerprint: "fp1"},
+		}
+		chartBundle := portainer.PolicyChartBundle{
+			PolicyChartSummary: portainer.PolicyChartSummary{ChartName: "chart1", Fingerprint: "fp1"},
+			Namespace:          "default",
+			EncodedTgz:         base64.StdEncoding.EncodeToString([]byte("chart-data")),
+			EncodedValues:      base64.StdEncoding.EncodeToString([]byte("values-data")),
+			NoWait:             true,
+		}
+
+		mockPortainerClient.EXPECT().GetCharts([]string{"chart1"}).Return([]portainer.PolicyChartBundle{chartBundle}, portainer.RestoreSettingsBundle{}, nil)
+		mockPortainerClient.EXPECT().UpdatePolicyChartStatuses(gomock.Any()).Return(nil)
+
+		manager.ProcessPolicyHelmCharts(chartSummaries)
+
+		assert.False(t, helmMock.capturedUpgradeOpts.Wait)
+	})
 }
 
 // Test adoption handler with no adoptions
@@ -597,14 +642,15 @@ func TestIsFailedOrPendingStatus(t *testing.T) {
 
 // mockHelmPackageManagerWithStatus is a test mock that can return releases with custom statuses
 type mockHelmPackageManagerWithStatus struct {
-	releases         []release.ReleaseElement
-	historyReleases  []*release.Release
-	listError        error
-	historyError     error
-	uninstallErr     error
-	forceRemoveErr   error
-	uninstallCalls   int
-	forceRemoveCalls int
+	releases             []release.ReleaseElement
+	historyReleases      []*release.Release
+	listError            error
+	historyError         error
+	uninstallErr         error
+	forceRemoveErr       error
+	uninstallCalls       int
+	forceRemoveCalls     int
+	capturedUpgradeOpts  options.InstallOptions
 }
 
 func (m *mockHelmPackageManagerWithStatus) Show(showOpts options.ShowOptions) ([]byte, error) {
@@ -623,6 +669,7 @@ func (m *mockHelmPackageManagerWithStatus) List(listOpts options.ListOptions) ([
 }
 
 func (m *mockHelmPackageManagerWithStatus) Upgrade(upgradeOpts options.InstallOptions) (*release.Release, error) {
+	m.capturedUpgradeOpts = upgradeOpts
 	return &release.Release{Name: upgradeOpts.Name, Namespace: upgradeOpts.Namespace}, nil
 }
 

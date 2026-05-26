@@ -199,10 +199,10 @@ func (pm *PolicyManager) installOrUpgradeCharts(policyChartSummaries []string, c
 			ValuesFile:      valuesPath,
 			Chart:           chartPath,
 			Namespace:       chartBundle.Namespace,
-			Wait:            true,
-			TakeOwnership:   true, // Equivalent to --take-ownership flag
-			CreateNamespace: true, // Equivalent to --create-namespace flag
-			Atomic:          true, // Equivalent to --atomic flag
+			Wait:            !chartBundle.NoWait, // Equivalent to --wait flag
+			TakeOwnership:   true,                // Equivalent to --take-ownership flag
+			CreateNamespace: true,                // Equivalent to --create-namespace flag
+			Atomic:          true,                // Equivalent to --atomic flag
 		}
 
 		// Check if there's a failed/pending release that needs cleanup before install
