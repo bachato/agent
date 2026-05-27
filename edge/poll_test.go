@@ -129,7 +129,7 @@ func TestPollPublishesAlertStateAfterReloadHandling(t *testing.T) {
 
 	service := &PollService{
 		edgeManager:      manager,
-		edgeStackManager: stack.NewStackManager(mockClient, "", nil, "edge-id", nil),
+		edgeStackManager: stack.NewStackManager(mockClient, nil, "edge-id", nil),
 		firstPoll:        false,
 		portainerClient:  mockClient,
 		scheduleManager:  mockScheduler,

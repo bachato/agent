@@ -82,7 +82,6 @@ type (
 
 	// Options are the options used to start an agent.
 	Options struct {
-		AssetsPath                  string
 		AgentServerAddr             string
 		AgentServerPort             string
 		AgentSecurityShutdown       time.Duration
@@ -308,8 +307,6 @@ const (
 	ScheduleScriptDirectory = "/opt/portainer/scripts"
 	// EdgeKeyFile is the name of the file used to persist the Edge key associated to the agent.
 	EdgeKeyFile = "agent_edge_key"
-	// DefaultAssetsPath is the default path of the binaries
-	DefaultAssetsPath = "/app"
 	// EdgeStackFilesPath is the path where edge stack files are saved
 	EdgeStackFilesPath = "/tmp/edge_stacks"
 	// UpdateEdgeStackFilesPath is the path where remote update edge stack files are saved.

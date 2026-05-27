@@ -17,7 +17,7 @@ func TestPortainerEdgeIDEnvVarPresent(t *testing.T) {
 	t.Parallel()
 	edgeID := "edge_id"
 
-	sm := NewStackManager(nil, "", nil, edgeID, nil)
+	sm := NewStackManager(nil, nil, edgeID, nil)
 
 	stackID := rand.Int()
 
@@ -47,7 +47,7 @@ func TestPortainerEdgeIDEnvVarPresent(t *testing.T) {
 func setupManagerAndFile(t *testing.T) (*StackManager, string, int) {
 	stackID := rand.Int()
 
-	manager := NewStackManager(nil, "", nil, "edge_id", nil)
+	manager := NewStackManager(nil, nil, "edge_id", nil)
 	manager.stacks[edgeStackID(stackID)] = &edgeStack{
 		StackPayload: edge.StackPayload{ID: stackID, Version: 1},
 	}

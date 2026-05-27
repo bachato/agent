@@ -9,7 +9,9 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
+	"github.com/moby/go-archive"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/portainer/portainer/api/logs"
 )
 
 const largeClientTimeout = 1 * time.Hour
@@ -77,6 +79,18 @@ func ContainerKill(name string) error {
 func ContainerDelete(name string, opts container.RemoveOptions) error {
 	return withCli(func(cli *client.Client) error {
 		return cli.ContainerRemove(context.Background(), name, opts)
+	})
+}
+
+func CopyToContainer(containerID, dstPath, srcPath string) error {
+	tarReader, err := archive.TarWithOptions(srcPath, &archive.TarOptions{})
+	if err != nil {
+		return err
+	}
+	defer logs.CloseAndLogErr(tarReader)
+
+	return withCli(func(cli *client.Client) error {
+		return cli.CopyToContainer(context.Background(), containerID, dstPath, tarReader, container.CopyToContainerOptions{})
 	})
 }
 

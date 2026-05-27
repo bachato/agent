@@ -467,7 +467,7 @@ func setupStackManager(t *testing.T) *StackManager {
 	// Mock portainer client
 	mockClient := &mockPortainerClient{stackPayload: stackPayload}
 
-	manager := NewStackManager(mockClient, "", nil, "edge_id", nil)
+	manager := NewStackManager(mockClient, nil, "edge_id", nil)
 	manager.stacks[edgeStackID(stackPayload.ID)] = &edgeStack{
 		StackPayload: edge.StackPayload{
 			ID: stackPayload.ID, Version: stackPayload.Version,
@@ -537,10 +537,9 @@ func TestStackManager_performActionOnStack(t *testing.T) {
 
 	cli := &mockPortainerClient{t: t}
 
-	assetsPath := ""
 	edgeID := "test-edge"
 
-	manager := NewStackManager(cli, assetsPath, nil, edgeID, nil)
+	manager := NewStackManager(cli, nil, edgeID, nil)
 
 	if err := manager.SetEngineType(EngineTypeDockerStandalone); err != nil {
 		t.Fatal("setting manager engine type: ", err)
@@ -689,7 +688,7 @@ func TestStackManager_performActionOnStack_EdgeUpdateScenarios(t *testing.T) {
 					Return(nil)
 			}
 
-			manager := NewStackManager(mockClient, "", nil, "test", nil)
+			manager := NewStackManager(mockClient, nil, "test", nil)
 			manager.deployer = mockDeployer
 			manager.stacks[edgeStackID(tt.stack.ID)] = tt.stack
 
@@ -735,7 +734,7 @@ func getContainerEnv(containerName string) map[string]string {
 
 func TestAddRegistryToEntryFile_Docker(t *testing.T) {
 	t.Parallel()
-	manager := NewStackManager(nil, "", nil, "edge_id", nil)
+	manager := NewStackManager(nil, nil, "edge_id", nil)
 	manager.engineType = EngineTypeDockerStandalone // directly set to avoid deployer setup
 
 	composeContent := `version: "3"

@@ -18,7 +18,6 @@ const (
 	EnvKeyClusterProbeInterval        = "AGENT_CLUSTER_PROBE_INTERVAL"
 	EnvKeyAgentSecret                 = "AGENT_SECRET"
 	EnvKeyAgentSecurityShutdown       = "AGENT_SECRET_TIMEOUT"
-	EnvKeyAssetsPath                  = "ASSETS_PATH"
 	EnvKeyDataPath                    = "DATA_PATH"
 	EnvKeyEdge                        = "EDGE"
 	EnvKeyEdgeAsync                   = "EDGE_ASYNC"
@@ -62,7 +61,6 @@ func NewEnvOptionParser() EnvOptionParser {
 }
 
 var (
-	fAssetsPath             = kingpin.Flag("assets", EnvKeyAssetsPath+" path to the assets folder").Envar(EnvKeyAssetsPath).Default(agent.DefaultAssetsPath).String()
 	fAgentServerAddr        = kingpin.Flag("host", EnvKeyAgentHost+" address on which the agent API will be exposed").Envar(EnvKeyAgentHost).Default(agent.DefaultAgentAddr).IP()
 	fAgentServerPort        = kingpin.Flag("port", EnvKeyAgentPort+" port on which the agent API will be exposed").Envar(EnvKeyAgentPort).Default(agent.DefaultAgentPort).Int()
 	fAgentSecurityShutdown  = kingpin.Flag("secret-timeout", EnvKeyAgentSecurityShutdown+" the duration after which the agent will be shutdown if not associated or secured by AGENT_SECRET. (defaults to 72h)").Envar(EnvKeyAgentSecurityShutdown).Default(agent.DefaultAgentSecurityShutdown).Duration()
@@ -140,7 +138,6 @@ func (parser EnvOptionParser) Options() (*agent.Options, error) {
 	}
 
 	return &agent.Options{
-		AssetsPath:                  *fAssetsPath,
 		AgentServerAddr:             fAgentServerAddr.String(),
 		AgentServerPort:             strconv.Itoa(*fAgentServerPort),
 		AgentSecurityShutdown:       *fAgentSecurityShutdown,
