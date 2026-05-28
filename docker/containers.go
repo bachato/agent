@@ -2,7 +2,9 @@ package docker
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"path/filepath"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -83,10 +85,20 @@ func ContainerDelete(name string, opts container.RemoveOptions) error {
 }
 
 func CopyToContainer(containerID, dstPath, srcPath string) error {
-	tarReader, err := archive.TarWithOptions(srcPath, &archive.TarOptions{})
+	if !filepath.IsAbs(srcPath) {
+		return fmt.Errorf("srcPath %q must be an absolute url", srcPath)
+	}
+
+	srcInfo, err := archive.CopyInfoSourcePath(srcPath, true)
 	if err != nil {
 		return err
 	}
+
+	tarReader, err := archive.TarResource(srcInfo)
+	if err != nil {
+		return err
+	}
+
 	defer logs.CloseAndLogErr(tarReader)
 
 	return withCli(func(cli *client.Client) error {

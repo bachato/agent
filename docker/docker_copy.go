@@ -140,4 +140,3 @@ func createUnpackerContainer(stackID int, stackName, composeDestination string, 
 		containerName,
 	)
 }
-

@@ -8,10 +8,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 
-	"github.com/docker/docker/api/types/container"
 	"github.com/portainer/portainer/api/filesystem"
+
+	"github.com/docker/docker/api/types/container"
 	"github.com/stretchr/testify/require"
 )
 
@@ -30,13 +32,22 @@ func TestContainerWait(t *testing.T) {
 	t.Fail()
 }
 
+func TestCopyToContainer_RelativeSourcePath(t *testing.T) {
+	err := CopyToContainer("", "", "../junk")
+	require.ErrorContains(t, err, "srcPath \"../junk\" must be an absolute url")
+}
+
 func TestCopyToContainer_TarsSourceDirectory(t *testing.T) {
 	tmpDir := t.TempDir()
-	expectedFiles := map[string]string{
+	srcDir := filepath.Base(tmpDir)
+	files := map[string]string{
 		"compose.yml": "test-compose-file",
 	}
-	for name, content := range expectedFiles {
+	expectedFiles := make(map[string]string, len(files)+1)
+	expectedFiles[srcDir+"/"] = ""
+	for name, content := range files {
 		require.NoError(t, os.WriteFile(filesystem.JoinPaths(tmpDir, name), []byte(content), 0o600))
+		expectedFiles[filesystem.JoinPaths(srcDir, name)] = content
 	}
 
 	var receivedBody []byte
