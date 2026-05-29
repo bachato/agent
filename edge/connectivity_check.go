@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"syscall"
 
 	agent "github.com/portainer/agent"
 	"github.com/portainer/agent/chisel"
@@ -202,7 +203,7 @@ func HasServerConnectivity(options *agent.Options) bool {
 			allPassed = false
 		} else {
 			resp, err := httpClient.DoConnectivityCheck(req)
-			if err != nil && (errors.As(err, new(*net.OpError)) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)) {
+			if err != nil && isTunnelProbeConnectionError(err) {
 				fmt.Printf("FAIL: Failed to reach Portainer tunnel server at %s: %v\n", params.tunnelAddr, err)
 				allPassed = false
 			} else {
@@ -216,4 +217,15 @@ func HasServerConnectivity(options *agent.Options) bool {
 	}
 
 	return allPassed
+}
+
+func isTunnelProbeConnectionError(err error) bool {
+	// Fail only on transport-level errors; malformed HTTP can still mean
+	// the tunnel port is reachable.
+	if errors.As(err, new(*net.OpError)) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+
+	// Catch wrapped Linux reset/aborted errors seen in CI.
+	return errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.ECONNABORTED)
 }
