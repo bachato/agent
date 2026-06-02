@@ -220,12 +220,17 @@ func HasServerConnectivity(options *agent.Options) bool {
 }
 
 func isTunnelProbeConnectionError(err error) bool {
-	// Fail only on transport-level errors; malformed HTTP can still mean
-	// the tunnel port is reachable.
-	if errors.As(err, new(*net.OpError)) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+	// Fail only on transport-level errors.
+	// A malformed HTTP response still means the tunnel port is reachable.
+	// Transport errors wrap net.OpError, EOF, or a syscall.Errno.
+	// HTTP parsing errors (e.g. textproto.ProtocolError) are string-based
+	// and never wrap syscall.Errno, so they fall through to PASS.
+	if errors.As(err, new(*net.OpError)) {
 		return true
 	}
-
-	// Catch wrapped Linux reset/aborted errors seen in CI.
-	return errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.ECONNABORTED)
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	var errno syscall.Errno
+	return errors.As(err, &errno)
 }
