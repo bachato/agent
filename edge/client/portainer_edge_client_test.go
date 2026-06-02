@@ -89,15 +89,15 @@ func TestUpdatePolicyChartStatuses_RetriesOnServerError(t *testing.T) {
 	t.Parallel()
 	fips.InitFIPS(false)
 
-	var requests int32
+	var requests atomic.Int32
 	httpClient := BuildHTTPClient(30, &agent.Options{})
 	httpClient.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		atomic.AddInt32(&requests, 1)
+		requests.Add(1)
 		require.Equal(t, http.MethodPut, r.Method)
 		require.Equal(t, "/api/endpoints/1/edge/charts/statuses", r.URL.Path)
 		require.Equal(t, "edge-id", r.Header.Get(agent.HTTPEdgeIdentifierHeaderName))
 
-		if atomic.LoadInt32(&requests) < 3 {
+		if requests.Load() < 3 {
 			return &http.Response{
 				StatusCode: http.StatusInternalServerError,
 				Body:       io.NopCloser(strings.NewReader("")),
@@ -124,7 +124,7 @@ func TestUpdatePolicyChartStatuses_RetriesOnServerError(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		err := client.UpdatePolicyChartStatuses([]portainer.PolicyChartStatus{{ChartName: "gatekeeper"}})
 		require.NoError(t, err)
-		require.Equal(t, int32(3), atomic.LoadInt32(&requests))
+		require.Equal(t, int32(3), requests.Load())
 	})
 }
 
@@ -132,15 +132,15 @@ func TestUpdatePolicyChartStatuses_RetriesOnTransportError(t *testing.T) {
 	t.Parallel()
 	fips.InitFIPS(false)
 
-	var requests int32
+	var requests atomic.Int32
 	httpClient := BuildHTTPClient(30, &agent.Options{})
 	httpClient.httpClient.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		atomic.AddInt32(&requests, 1)
+		requests.Add(1)
 		require.Equal(t, http.MethodPut, req.Method)
 		require.Equal(t, "/api/endpoints/1/edge/charts/statuses", req.URL.Path)
 		require.Equal(t, "edge-id", req.Header.Get(agent.HTTPEdgeIdentifierHeaderName))
 
-		if atomic.LoadInt32(&requests) == 1 {
+		if requests.Load() == 1 {
 			return nil, errors.New("dial timeout")
 		}
 
@@ -162,7 +162,7 @@ func TestUpdatePolicyChartStatuses_RetriesOnTransportError(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		err := client.UpdatePolicyChartStatuses([]portainer.PolicyChartStatus{{ChartName: "gatekeeper"}})
 		require.NoError(t, err)
-		require.Equal(t, int32(2), atomic.LoadInt32(&requests))
+		require.Equal(t, int32(2), requests.Load())
 	})
 }
 
@@ -170,10 +170,10 @@ func TestUpdatePolicyChartStatuses_DoesNotRetryOnClientError(t *testing.T) {
 	t.Parallel()
 	fips.InitFIPS(false)
 
-	var requests int32
+	var requests atomic.Int32
 	httpClient := BuildHTTPClient(30, &agent.Options{})
 	httpClient.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		atomic.AddInt32(&requests, 1)
+		requests.Add(1)
 		return &http.Response{
 			StatusCode: http.StatusBadRequest,
 			Body:       io.NopCloser(strings.NewReader("")),
@@ -191,7 +191,7 @@ func TestUpdatePolicyChartStatuses_DoesNotRetryOnClientError(t *testing.T) {
 
 	err := client.UpdatePolicyChartStatuses([]portainer.PolicyChartStatus{{ChartName: "gatekeeper"}})
 	require.Error(t, err)
-	require.Equal(t, int32(1), atomic.LoadInt32(&requests))
+	require.Equal(t, int32(1), requests.Load())
 }
 
 func TestSetAlertStateCachesHeader(t *testing.T) {
