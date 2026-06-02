@@ -710,8 +710,15 @@ func newHistoryRelease(name, namespace string, status release.Status) *release.R
 	}
 }
 
-// Test cleanupFailedRelease function
-func TestCleanupFailedRelease(t *testing.T) {
+// newHistoryReleaseWithAnnotation creates a deployed release with a portainer/chart-path annotation set
+func newHistoryReleaseWithAnnotation(name, namespace, chartPath string) *release.Release {
+	r := newHistoryRelease(name, namespace, "deployed")
+	r.ChartReference = release.ChartReference{ChartPath: chartPath}
+	return r
+}
+
+// Test prepareForInstall function
+func TestPrepareForInstall(t *testing.T) {
 	t.Parallel()
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -725,8 +732,9 @@ func TestCleanupFailedRelease(t *testing.T) {
 		}
 		manager := NewPolicyManager(mockPortainerClient, mockKubeClient, mockHelm)
 
-		err := manager.cleanupFailedRelease("my-chart", "default")
+		conflict, err := manager.prepareForInstall("my-chart", "default")
 		require.NoError(t, err)
+		assert.False(t, conflict)
 		assert.Equal(t, 0, mockHelm.uninstallCalls)
 	})
 
@@ -736,12 +744,13 @@ func TestCleanupFailedRelease(t *testing.T) {
 		}
 		manager := NewPolicyManager(mockPortainerClient, mockKubeClient, mockHelm)
 
-		err := manager.cleanupFailedRelease("my-chart", "default")
+		conflict, err := manager.prepareForInstall("my-chart", "default")
 		require.NoError(t, err)
+		assert.False(t, conflict)
 		assert.Equal(t, 0, mockHelm.uninstallCalls)
 	})
 
-	t.Run("Release in deployed state - no cleanup needed", func(t *testing.T) {
+	t.Run("Deployed release with no annotation - externally managed, conflict", func(t *testing.T) {
 		mockHelm := &mockHelmPackageManagerWithStatus{
 			historyReleases: []*release.Release{
 				newHistoryRelease("my-chart", "default", "deployed"),
@@ -749,12 +758,27 @@ func TestCleanupFailedRelease(t *testing.T) {
 		}
 		manager := NewPolicyManager(mockPortainerClient, mockKubeClient, mockHelm)
 
-		err := manager.cleanupFailedRelease("my-chart", "default")
+		conflict, err := manager.prepareForInstall("my-chart", "default")
 		require.NoError(t, err)
+		assert.True(t, conflict)
 		assert.Equal(t, 0, mockHelm.uninstallCalls)
 	})
 
-	t.Run("Release in failed state - should uninstall", func(t *testing.T) {
+	t.Run("Deployed release with portainer annotation - Portainer-managed, allow upgrade", func(t *testing.T) {
+		mockHelm := &mockHelmPackageManagerWithStatus{
+			historyReleases: []*release.Release{
+				newHistoryReleaseWithAnnotation("my-chart", "default", "/some/chart/path"),
+			},
+		}
+		manager := NewPolicyManager(mockPortainerClient, mockKubeClient, mockHelm)
+
+		conflict, err := manager.prepareForInstall("my-chart", "default")
+		require.NoError(t, err)
+		assert.False(t, conflict)
+		assert.Equal(t, 0, mockHelm.uninstallCalls)
+	})
+
+	t.Run("Release in failed state without annotation - externally managed, conflict", func(t *testing.T) {
 		mockHelm := &mockHelmPackageManagerWithStatus{
 			historyReleases: []*release.Release{
 				newHistoryRelease("my-chart", "default", "failed"),
@@ -762,13 +786,13 @@ func TestCleanupFailedRelease(t *testing.T) {
 		}
 		manager := NewPolicyManager(mockPortainerClient, mockKubeClient, mockHelm)
 
-		err := manager.cleanupFailedRelease("my-chart", "default")
+		conflict, err := manager.prepareForInstall("my-chart", "default")
 		require.NoError(t, err)
-		assert.Equal(t, 1, mockHelm.uninstallCalls)
-		assert.Equal(t, 0, mockHelm.forceRemoveCalls)
+		assert.True(t, conflict)
+		assert.Equal(t, 0, mockHelm.uninstallCalls)
 	})
 
-	t.Run("Release in pending-install state - should uninstall", func(t *testing.T) {
+	t.Run("Release in pending-install state without annotation - externally managed, conflict", func(t *testing.T) {
 		mockHelm := &mockHelmPackageManagerWithStatus{
 			historyReleases: []*release.Release{
 				newHistoryRelease("my-chart", "default", "pending-install"),
@@ -776,12 +800,13 @@ func TestCleanupFailedRelease(t *testing.T) {
 		}
 		manager := NewPolicyManager(mockPortainerClient, mockKubeClient, mockHelm)
 
-		err := manager.cleanupFailedRelease("my-chart", "default")
+		conflict, err := manager.prepareForInstall("my-chart", "default")
 		require.NoError(t, err)
-		assert.Equal(t, 1, mockHelm.uninstallCalls)
+		assert.True(t, conflict)
+		assert.Equal(t, 0, mockHelm.uninstallCalls)
 	})
 
-	t.Run("Release in pending-upgrade state - should uninstall", func(t *testing.T) {
+	t.Run("Release in pending-upgrade state without annotation - externally managed, conflict", func(t *testing.T) {
 		mockHelm := &mockHelmPackageManagerWithStatus{
 			historyReleases: []*release.Release{
 				newHistoryRelease("my-chart", "default", "pending-upgrade"),
@@ -789,12 +814,13 @@ func TestCleanupFailedRelease(t *testing.T) {
 		}
 		manager := NewPolicyManager(mockPortainerClient, mockKubeClient, mockHelm)
 
-		err := manager.cleanupFailedRelease("my-chart", "default")
+		conflict, err := manager.prepareForInstall("my-chart", "default")
 		require.NoError(t, err)
-		assert.Equal(t, 1, mockHelm.uninstallCalls)
+		assert.True(t, conflict)
+		assert.Equal(t, 0, mockHelm.uninstallCalls)
 	})
 
-	t.Run("Release in pending-rollback state - should uninstall", func(t *testing.T) {
+	t.Run("Release in pending-rollback state without annotation - externally managed, conflict", func(t *testing.T) {
 		mockHelm := &mockHelmPackageManagerWithStatus{
 			historyReleases: []*release.Release{
 				newHistoryRelease("my-chart", "default", "pending-rollback"),
@@ -802,12 +828,13 @@ func TestCleanupFailedRelease(t *testing.T) {
 		}
 		manager := NewPolicyManager(mockPortainerClient, mockKubeClient, mockHelm)
 
-		err := manager.cleanupFailedRelease("my-chart", "default")
+		conflict, err := manager.prepareForInstall("my-chart", "default")
 		require.NoError(t, err)
-		assert.Equal(t, 1, mockHelm.uninstallCalls)
+		assert.True(t, conflict)
+		assert.Equal(t, 0, mockHelm.uninstallCalls)
 	})
 
-	t.Run("Release in uninstalling state - should uninstall", func(t *testing.T) {
+	t.Run("Release in uninstalling state without annotation - externally managed, conflict", func(t *testing.T) {
 		mockHelm := &mockHelmPackageManagerWithStatus{
 			historyReleases: []*release.Release{
 				newHistoryRelease("my-chart", "default", "uninstalling"),
@@ -815,12 +842,13 @@ func TestCleanupFailedRelease(t *testing.T) {
 		}
 		manager := NewPolicyManager(mockPortainerClient, mockKubeClient, mockHelm)
 
-		err := manager.cleanupFailedRelease("my-chart", "default")
+		conflict, err := manager.prepareForInstall("my-chart", "default")
 		require.NoError(t, err)
-		assert.Equal(t, 1, mockHelm.uninstallCalls)
+		assert.True(t, conflict)
+		assert.Equal(t, 0, mockHelm.uninstallCalls)
 	})
 
-	t.Run("Release in superseded state - should uninstall", func(t *testing.T) {
+	t.Run("Release in superseded state without annotation - externally managed, conflict", func(t *testing.T) {
 		mockHelm := &mockHelmPackageManagerWithStatus{
 			historyReleases: []*release.Release{
 				newHistoryRelease("my-chart", "default", "superseded"),
@@ -828,12 +856,13 @@ func TestCleanupFailedRelease(t *testing.T) {
 		}
 		manager := NewPolicyManager(mockPortainerClient, mockKubeClient, mockHelm)
 
-		err := manager.cleanupFailedRelease("my-chart", "default")
+		conflict, err := manager.prepareForInstall("my-chart", "default")
 		require.NoError(t, err)
-		assert.Equal(t, 1, mockHelm.uninstallCalls)
+		assert.True(t, conflict)
+		assert.Equal(t, 0, mockHelm.uninstallCalls)
 	})
 
-	t.Run("Release in uninstalled state - should uninstall", func(t *testing.T) {
+	t.Run("Release in uninstalled state without annotation - externally managed, conflict", func(t *testing.T) {
 		mockHelm := &mockHelmPackageManagerWithStatus{
 			historyReleases: []*release.Release{
 				newHistoryRelease("my-chart", "default", "uninstalled"),
@@ -841,8 +870,41 @@ func TestCleanupFailedRelease(t *testing.T) {
 		}
 		manager := NewPolicyManager(mockPortainerClient, mockKubeClient, mockHelm)
 
-		err := manager.cleanupFailedRelease("my-chart", "default")
+		conflict, err := manager.prepareForInstall("my-chart", "default")
 		require.NoError(t, err)
+		assert.True(t, conflict)
+		assert.Equal(t, 0, mockHelm.uninstallCalls)
+	})
+
+	t.Run("Portainer-managed release in failed state - should uninstall and retry", func(t *testing.T) {
+		mockHelm := &mockHelmPackageManagerWithStatus{
+			historyReleases: []*release.Release{
+				newHistoryReleaseWithAnnotation("my-chart", "default", "/some/chart/path"),
+			},
+		}
+		// Override the status to failed (newHistoryReleaseWithAnnotation defaults to deployed)
+		mockHelm.historyReleases[0].Info.Status = "failed"
+		manager := NewPolicyManager(mockPortainerClient, mockKubeClient, mockHelm)
+
+		conflict, err := manager.prepareForInstall("my-chart", "default")
+		require.NoError(t, err)
+		assert.False(t, conflict)
+		assert.Equal(t, 1, mockHelm.uninstallCalls)
+		assert.Equal(t, 0, mockHelm.forceRemoveCalls)
+	})
+
+	t.Run("Portainer-managed release in pending-upgrade state - should uninstall and retry", func(t *testing.T) {
+		mockHelm := &mockHelmPackageManagerWithStatus{
+			historyReleases: []*release.Release{
+				newHistoryReleaseWithAnnotation("my-chart", "default", "/some/chart/path"),
+			},
+		}
+		mockHelm.historyReleases[0].Info.Status = "pending-upgrade"
+		manager := NewPolicyManager(mockPortainerClient, mockKubeClient, mockHelm)
+
+		conflict, err := manager.prepareForInstall("my-chart", "default")
+		require.NoError(t, err)
+		assert.False(t, conflict)
 		assert.Equal(t, 1, mockHelm.uninstallCalls)
 	})
 
@@ -852,42 +914,122 @@ func TestCleanupFailedRelease(t *testing.T) {
 		}
 		manager := NewPolicyManager(mockPortainerClient, mockKubeClient, mockHelm)
 
-		err := manager.cleanupFailedRelease("my-chart", "default")
+		conflict, err := manager.prepareForInstall("my-chart", "default")
 		require.Error(t, err)
+		assert.False(t, conflict)
 		assert.Contains(t, err.Error(), "failed to get release history")
 		assert.Equal(t, 0, mockHelm.uninstallCalls)
 	})
 
-	t.Run("Uninstall error - force-remove succeeds as fallback", func(t *testing.T) {
+	t.Run("Portainer-managed release in failed state - uninstall error, force-remove succeeds as fallback", func(t *testing.T) {
 		mockHelm := &mockHelmPackageManagerWithStatus{
 			historyReleases: []*release.Release{
-				newHistoryRelease("my-chart", "default", "failed"),
+				newHistoryReleaseWithAnnotation("my-chart", "default", "/some/chart/path"),
 			},
 			uninstallErr: errors.New("uninstall failed: CRDs missing"),
 		}
+		mockHelm.historyReleases[0].Info.Status = "failed"
 		manager := NewPolicyManager(mockPortainerClient, mockKubeClient, mockHelm)
 
-		err := manager.cleanupFailedRelease("my-chart", "default")
+		conflict, err := manager.prepareForInstall("my-chart", "default")
 		require.NoError(t, err)
+		assert.False(t, conflict)
 		assert.Equal(t, 1, mockHelm.uninstallCalls)
 		assert.Equal(t, 1, mockHelm.forceRemoveCalls)
 	})
 
-	t.Run("Uninstall error and force-remove error - should return error", func(t *testing.T) {
+	t.Run("Portainer-managed release in failed state - uninstall and force-remove both fail", func(t *testing.T) {
 		mockHelm := &mockHelmPackageManagerWithStatus{
 			historyReleases: []*release.Release{
-				newHistoryRelease("my-chart", "default", "failed"),
+				newHistoryReleaseWithAnnotation("my-chart", "default", "/some/chart/path"),
 			},
 			uninstallErr:   errors.New("uninstall failed"),
 			forceRemoveErr: errors.New("force-remove failed"),
 		}
+		mockHelm.historyReleases[0].Info.Status = "failed"
 		manager := NewPolicyManager(mockPortainerClient, mockKubeClient, mockHelm)
 
-		err := manager.cleanupFailedRelease("my-chart", "default")
+		conflict, err := manager.prepareForInstall("my-chart", "default")
 		require.Error(t, err)
+		assert.False(t, conflict)
 		assert.Contains(t, err.Error(), "failed to force-remove release")
 		assert.Contains(t, err.Error(), "original")
 		assert.Equal(t, 1, mockHelm.uninstallCalls)
 		assert.Equal(t, 1, mockHelm.forceRemoveCalls)
 	})
+}
+
+func TestReleaseNameForBundle(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		bundle   portainer.PolicyChartBundle
+		expected string
+	}{
+		{
+			name: "uses ReleaseName when set",
+			bundle: portainer.PolicyChartBundle{
+				PolicyChartSummary: portainer.PolicyChartSummary{ChartName: "portainer-observability-k8s"},
+				ReleaseName:        "kubernetes-agent",
+			},
+			expected: "kubernetes-agent",
+		},
+		{
+			name: "falls back to ChartName when ReleaseName is empty",
+			bundle: portainer.PolicyChartBundle{
+				PolicyChartSummary: portainer.PolicyChartSummary{ChartName: "portainer-setup-k8s"},
+			},
+			expected: "portainer-setup-k8s",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, releaseNameForBundle(tt.bundle))
+		})
+	}
+}
+
+func TestProcessPolicyHelmCharts_ConflictSkipsInstall(t *testing.T) {
+	t.Parallel()
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockPortainerClient := mocks.NewMockPortainerClient(ctrl)
+	mockKubeClient := &kubernetes.KubeClient{}
+
+	// GetHistory returns a deployed release with no portainer annotation — externally managed.
+	mockHelm := &mockHelmPackageManagerWithStatus{
+		historyReleases: []*release.Release{
+			newHistoryRelease("chart1", "default", "deployed"),
+			// ChartReference.ChartPath is empty (zero value) — signals external management.
+		},
+	}
+
+	manager := NewPolicyManager(mockPortainerClient, mockKubeClient, mockHelm)
+
+	chartSummaries := []portainer.PolicyChartSummary{
+		{ChartName: "chart1", Fingerprint: "fp1"},
+	}
+
+	chartBundle := portainer.PolicyChartBundle{
+		PolicyChartSummary: portainer.PolicyChartSummary{ChartName: "chart1", Fingerprint: "fp1"},
+		Namespace:          "default",
+		EncodedTgz:         base64.StdEncoding.EncodeToString([]byte("chart-data")),
+		EncodedValues:      base64.StdEncoding.EncodeToString([]byte("values-data")),
+	}
+
+	mockPortainerClient.EXPECT().GetCharts([]string{"chart1"}).Return([]portainer.PolicyChartBundle{chartBundle}, portainer.RestoreSettingsBundle{}, nil)
+	mockPortainerClient.EXPECT().UpdatePolicyChartStatuses(gomock.Any()).DoAndReturn(func(statuses []portainer.PolicyChartStatus) error {
+		require.Len(t, statuses, 1)
+		assert.Equal(t, portainer.HelmInstallStatusConflict, statuses[0].Status)
+		assert.Equal(t, "chart1", statuses[0].ChartName)
+		return nil
+	})
+
+	manager.ProcessPolicyHelmCharts(chartSummaries)
+
+	require.Len(t, manager.policyChartStatus, 1)
+	assert.Equal(t, portainer.HelmInstallStatusConflict, manager.policyChartStatus["chart1"].Status)
 }

@@ -193,9 +193,11 @@ func (pm *PolicyManager) installOrUpgradeCharts(policyChartSummaries []string, c
 			continue
 		}
 
+		releaseName := releaseNameForBundle(chartBundle)
+
 		// Install/upgrade chart using Helm SDK
 		installOpts := options.InstallOptions{
-			Name:            chartBundle.ChartName,
+			Name:            releaseName,
 			ValuesFile:      valuesPath,
 			Chart:           chartPath,
 			Namespace:       chartBundle.Namespace,
@@ -205,12 +207,17 @@ func (pm *PolicyManager) installOrUpgradeCharts(policyChartSummaries []string, c
 			Atomic:          true,                // Equivalent to --atomic flag
 		}
 
-		// Check if there's a failed/pending release that needs cleanup before install
-		if err := pm.cleanupFailedRelease(chartBundle.ChartName, chartBundle.Namespace); err != nil {
+		// Check for conflicts or failed/pending releases before install
+		conflict, err := pm.prepareForInstall(releaseName, chartBundle.Namespace)
+		if err != nil {
 			log.Warn().
 				Err(err).
 				Str("chart", chartBundle.ChartName).
-				Msg("failed to cleanup existing release, proceeding with install anyway")
+				Msg("failed to prepare for install, proceeding anyway")
+		}
+		if conflict {
+			pm.setChartToConflict(chartBundle.ChartName, "A Helm release with this name already exists but is not managed by Portainer. Uninstall the existing release before applying this policy.")
+			continue
 		}
 
 		log.Info().
@@ -616,15 +623,35 @@ func getRestoreTypeForChart(chartName string) portainer.PolicyType {
 	}
 }
 
-// cleanupFailedRelease checks if there's an existing release that is NOT in a deployed
-// state and removes it to allow a fresh install. This handles cases where a previous
-// install/upgrade/rollback attempt failed or left the release stuck in a non-deployed
-// state (e.g. failed, pending-*, uninstalling, superseded).
-// Helm's "upgrade" command requires at least one deployed release to upgrade from,
-// so any non-deployed release must be cleaned up before a fresh install can proceed.
-func (pm *PolicyManager) cleanupFailedRelease(releaseName, namespace string) error {
-	// Use GetHistory for reliable detection - it directly queries release storage
-	// and returns all versions regardless of status, unlike List which may filter.
+// releaseNameForBundle returns the release name to use for a chart bundle.
+// If ReleaseName is set it takes precedence over ChartName, allowing policies
+// to install under a custom name (e.g. "kubernetes-agent" vs "portainer-observability-k8s").
+func releaseNameForBundle(bundle portainer.PolicyChartBundle) string {
+	if bundle.ReleaseName != "" {
+		return bundle.ReleaseName
+	}
+	return bundle.ChartName
+}
+
+// setChartToConflict marks a chart as conflicting with an externally-managed Helm release.
+// Unlike setChartToFailed, the fingerprint is preserved so the conflict is not retried
+// automatically — the user must resolve the conflict manually.
+func (pm *PolicyManager) setChartToConflict(chartName, message string) {
+	if status, ok := pm.policyChartStatus[chartName]; ok {
+		status.Status = portainer.HelmInstallStatusConflict
+		status.Message = message
+		status.LastAttemptTime = time.Now().Unix()
+	}
+}
+
+// prepareForInstall inspects the existing release history and decides whether to
+// proceed, block with a conflict, or clean up a stuck non-deployed release.
+//
+// Returns (true, nil) when the existing release is deployed but externally managed
+// (no portainer/chart-path annotation) — the caller should abort and set conflict status.
+// Returns (false, nil) for a clean path: no release, Portainer-managed deployed release,
+// or a non-deployed release that was successfully cleaned up.
+func (pm *PolicyManager) prepareForInstall(releaseName, namespace string) (conflict bool, err error) {
 	historyOpts := options.HistoryOptions{
 		Name:      releaseName,
 		Namespace: namespace,
@@ -632,34 +659,42 @@ func (pm *PolicyManager) cleanupFailedRelease(releaseName, namespace string) err
 
 	history, err := pm.helmPackageManager.GetHistory(historyOpts)
 	if err != nil {
-		// If release not found, nothing to clean up
 		if strings.Contains(err.Error(), "not found") {
-			return nil
+			return false, nil
 		}
-		return fmt.Errorf("failed to get release history: %w", err)
+		return false, fmt.Errorf("failed to get release history: %w", err)
 	}
 
 	if len(history) == 0 {
-		return nil
+		return false, nil
 	}
 
-	// History is sorted latest first - check if the latest version is deployed
 	latestRelease := history[0]
 	if latestRelease.Info == nil {
-		return nil
+		return false, nil
+	}
+
+	if latestRelease.ChartReference.ChartPath == "" {
+		// No portainer annotation — externally managed, block regardless of current status.
+		log.Info().
+			Str("release", releaseName).
+			Str("namespace", namespace).
+			Str("status", string(latestRelease.Info.Status)).
+			Msg("detected externally-managed release, reporting conflict")
+		return true, nil
 	}
 
 	latestStatus := string(latestRelease.Info.Status)
 	if latestStatus == "deployed" {
-		// Release is healthy, no cleanup needed
-		return nil
+		// Portainer-managed deployed release — allow upgrade.
+		return false, nil
 	}
 
 	log.Info().
-		Str("chart", releaseName).
+		Str("release", releaseName).
 		Str("namespace", namespace).
 		Str("status", latestStatus).
-		Msg("found release in non-deployed state, cleaning up before fresh install")
+		Msg("found Portainer-managed release in non-deployed state, cleaning up before fresh install")
 
 	uninstallOpts := options.UninstallOptions{
 		Name:      releaseName,
@@ -670,34 +705,32 @@ func (pm *PolicyManager) cleanupFailedRelease(releaseName, namespace string) err
 	if err := pm.helmPackageManager.Uninstall(uninstallOpts); err != nil {
 		log.Warn().
 			Err(err).
-			Str("chart", releaseName).
+			Str("release", releaseName).
 			Msg("standard uninstall failed, attempting to force-remove release history")
 
 		// When CRDs are missing, Helm can't build kubernetes objects for deletion and
 		// returns early without purging the release history. Force-remove the release
 		// so a fresh install can proceed on the next attempt.
 		if forceErr := pm.helmPackageManager.ForceRemoveRelease(uninstallOpts); forceErr != nil {
-			return fmt.Errorf("failed to force-remove release after uninstall failure: %w (original: %w)", forceErr, err)
+			return false, fmt.Errorf("failed to force-remove release after uninstall failure: %w (original: %w)", forceErr, err)
 		}
 
 		log.Info().
-			Str("chart", releaseName).
+			Str("release", releaseName).
 			Msg("successfully force-removed stuck release history")
 
-		return nil
+		return false, nil
 	}
 
 	log.Info().
-		Str("chart", releaseName).
+		Str("release", releaseName).
 		Str("namespace", namespace).
 		Msg("successfully cleaned up non-deployed release")
 
-	return nil
+	return false, nil
 }
 
 // isFailedOrPendingStatus checks if a release status indicates it needs cleanup.
-// Kept for backward compatibility in tests, but cleanupFailedRelease now uses
-// a broader "is NOT deployed" check via GetHistory.
 func isFailedOrPendingStatus(status string) bool {
 	switch status {
 	case "failed", "pending-install", "pending-upgrade", "pending-rollback":
