@@ -32,7 +32,16 @@ type PortainerClient interface {
 	EnqueueLogCollectionForStack(logCmd LogCommandData)
 	GetCharts(chartNames []string) ([]portainer.PolicyChartBundle, portainer.RestoreSettingsBundle, error)
 	UpdatePolicyChartStatuses(statuses []portainer.PolicyChartStatus) error
+	ReportPolicyStatuses(statuses []portainer.PolicyActualState) error
 	SetAlertState(state *pkgmetrics.EdgeAlertState)
+}
+
+// ChartCacher is an optional interface for clients that support caching chart
+// bundles received via async commands. The async client implements this so
+// processPolicyStates and processPolicyHelmCharts can cache bundles for
+// on-demand GetCharts retrieval without a concrete type assertion.
+type ChartCacher interface {
+	SetChartsResponse(chart *PolicyHelmCharts)
 }
 
 type EdgeConfigID int
@@ -73,8 +82,14 @@ type PollStatusResponse struct {
 	Stacks               []StackStatus                        `json:"stacks"`
 	EdgeConfigurations   map[EdgeConfigID]EdgeConfigStateType `json:"edge_configurations"`
 	PolicyChartSummaries []portainer.PolicyChartSummary       `json:"policy_chart_summaries"`
-	AlertRules           []pkgmetrics.EdgeAlertRule           `json:"alert_rules"`
-	AlertRulesYAML       string                               `json:"alert_rules_yaml,omitempty"`
+	// PolicyStates is a pointer so the agent can distinguish "new server sent an
+	// empty list (all policies deleted → remove all handlers)" from "old server
+	// omitted the field (use legacy per-chart path)". A nil pointer means the
+	// field was absent; a non-nil pointer to an empty slice means new server,
+	// no active policies.
+	PolicyStates   *[]portainer.PolicyDesiredState `json:"policyStates,omitempty"`
+	AlertRules     []pkgmetrics.EdgeAlertRule      `json:"alert_rules"`
+	AlertRulesYAML string                          `json:"alert_rules_yaml,omitempty"`
 
 	// Async mode only
 	EndpointID       int            `json:"endpointID"`
@@ -101,6 +116,10 @@ type PolicyHelmCharts struct {
 	PolicyChartBundles    []portainer.PolicyChartBundle   `json:"policyChartBundles"`
 	RestoreSettingsBundle portainer.RestoreSettingsBundle `json:"restoreSettingsBundle"`
 }
+
+// PolicyStatesCommandPayload is the value of an async "policyStates" command.
+// Aliased from portainer.PolicyStatesAsyncPayload for local use.
+type PolicyStatesCommandPayload = portainer.PolicyStatesAsyncPayload
 
 type setEndpointIDFn func(portainer.EndpointID)
 type getEndpointIDFn func() portainer.EndpointID

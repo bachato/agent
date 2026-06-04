@@ -20,10 +20,12 @@ import (
 	"github.com/portainer/agent/edge/client"
 	"github.com/portainer/agent/edge/evaluator"
 	"github.com/portainer/agent/edge/policies"
+	"github.com/portainer/agent/edge/policies/helm"
 	"github.com/portainer/agent/edge/scheduler"
 	"github.com/portainer/agent/edge/stack"
 	agentmetrics "github.com/portainer/agent/http/handler/metrics"
 	"github.com/portainer/agent/kubernetes"
+	"github.com/portainer/agent/policyreconcile"
 	portainer "github.com/portainer/portainer/api"
 	"github.com/portainer/portainer/pkg/libcrypto"
 	"github.com/portainer/portainer/pkg/librand"
@@ -101,6 +103,10 @@ type PollService struct {
 	evaluator                *evaluator.Service
 	evaluatorInitAttempted   bool
 	metricsHandler           *agentmetrics.Handler
+	reconciler               *policyreconcile.Reconciler
+	pollHooks                []policyreconcile.PollHook
+	chartReporter            *helm.ChartStatusReporter // nil on Docker/Podman agents
+	policyReconcileCh        chan []portainer.PolicyDesiredState
 	// Async mode only
 	pingInterval     time.Duration
 	snapshotInterval time.Duration
@@ -160,6 +166,8 @@ func newPollService(edgeManager *Manager, edgeStackManager *stack.StackManager, 
 		portainerClient:          portainerClient,
 		firstPoll:                true,
 		metricsHandler:           edgeManager.MetricsHandler(),
+		reconciler:               policyreconcile.NewReconciler(),
+		policyReconcileCh:        make(chan []portainer.PolicyDesiredState, 1),
 	}
 
 	if config.TunnelCapability {
@@ -175,6 +183,7 @@ func newPollService(edgeManager *Manager, edgeStackManager *stack.StackManager, 
 	} else {
 		pollService.pollTicker = time.NewTicker(pollFrequency)
 
+		go pollService.startPolicyReconcileWorker()
 		go pollService.startStatusPollLoop()
 		go pollService.startActivityMonitoringLoop()
 
@@ -186,6 +195,25 @@ func newPollService(edgeManager *Manager, edgeStackManager *stack.StackManager, 
 	}
 
 	return pollService, nil
+}
+
+// RegisterReconcilerFactory registers a HandlerFactory with the reconciler.
+// Called at boot for each platform-specific policy handler type.
+func (service *PollService) RegisterReconcilerFactory(policyType string, f policyreconcile.HandlerFactory) {
+	service.reconciler.RegisterFactory(policyType, f)
+}
+
+// SetChartReporter registers the helm ChartStatusReporter used for legacy dual-emit.
+// Called at boot on K8s agents only; nil on Docker/Podman agents.
+func (service *PollService) SetChartReporter(r *helm.ChartStatusReporter) {
+	service.chartReporter = r
+}
+
+// RegisterPollHook registers a PollHook that will be called every poll cycle via Tick.
+// Intended for handler packages (e.g. helm.RestoreCoordinator) that need cross-poll
+// work outside the reconciler's per-cycle Apply/Remove lifecycle.
+func (service *PollService) RegisterPollHook(h policyreconcile.PollHook) {
+	service.pollHooks = append(service.pollHooks, h)
 }
 
 func (service *PollService) resetActivityTimer() {
@@ -200,6 +228,9 @@ func (service *PollService) Start() {
 
 func (service *PollService) Stop() {
 	service.stopSignal <- struct{}{}
+	if service.policyReconcileCh != nil {
+		close(service.policyReconcileCh)
+	}
 	if service.metricPushCancel != nil {
 		service.metricPushCancel()
 	}
@@ -343,8 +374,13 @@ func (service *PollService) poll() error {
 
 	service.processEdgeConfigs(environmentStatus.EdgeConfigurations)
 
-	if service.edgeManager.kubeClient != nil {
-		// Process helm charts in background to avoid blocking the poll loop
+	if hasPerPolicyPayload(environmentStatus) {
+		// Keep Helm installs off the poll loop; if reconcile falls behind, only
+		// the latest pending payload is kept.
+		service.enqueuePolicyReconcile(*environmentStatus.PolicyStates)
+	} else if service.edgeManager.kubeClient != nil && environmentStatus.PolicyChartSummaries != nil {
+		// Legacy payload fallback: older server sends only per-chart summaries.
+		// Absent payloads leave active handlers alone.
 		go service.policyManager.ProcessPolicyHelmCharts(environmentStatus.PolicyChartSummaries)
 	}
 
@@ -780,4 +816,136 @@ func computeRulesHash(yamlContent string) uint64 {
 	h := fnv.New64a()
 	_, _ = h.Write([]byte(yamlContent))
 	return h.Sum64()
+}
+
+// reconcilePolicies drives the reconciler and any registered PollHooks for a
+// per-policy desired-state payload. Called from both the sync poll loop and the
+// async "policyStates" command handler so both paths share the same dispatch logic.
+// Reconcile is synchronous so Statuses() reflects the completed cycle when it returns.
+func (service *PollService) reconcilePolicies(states []portainer.PolicyDesiredState) {
+	// poll() has no context parameter (legacy design); Background is consistent
+	// with other calls in the same function.
+	ctx := context.Background()
+	desiredStates := toDesiredStates(states)
+	service.reconciler.Reconcile(ctx, desiredStates)
+
+	desiredIDs := desiredStateIDs(desiredStates)
+	var hookStatuses []policyreconcile.ActualState
+	for _, h := range service.pollHooks {
+		hookStatuses = append(hookStatuses, h.Tick(ctx, desiredIDs)...)
+	}
+
+	// New per-policy status endpoint.
+	allStatuses := append(service.reconciler.Statuses(), hookStatuses...)
+	if err := service.portainerClient.ReportPolicyStatuses(toPolicyActualStates(allStatuses)); err != nil {
+		log.Debug().Err(err).Str("context", "PolicyStatusReporting").Msg("ReportPolicyStatuses failed")
+	}
+
+	// Legacy dual-emit: feeds the old per-chart endpoint for servers without the new one.
+	if service.chartReporter != nil {
+		snapshot := helm.ChartStatusSnapshot(service.chartReporter)
+		for i := range snapshot {
+			snapshot[i].EnvironmentID = service.edgeManager.GetEndpointID()
+		}
+		if err := service.portainerClient.UpdatePolicyChartStatuses(snapshot); err != nil {
+			log.Debug().Err(err).Str("context", "PolicyStatusReporting").Msg("UpdatePolicyChartStatuses (dual-emit) failed")
+		}
+	}
+}
+
+func (service *PollService) enqueuePolicyReconcile(states []portainer.PolicyDesiredState) {
+	if service.policyReconcileCh == nil {
+		service.reconcilePolicies(states)
+		return
+	}
+
+	queued := append([]portainer.PolicyDesiredState(nil), states...)
+	select {
+	case service.policyReconcileCh <- queued:
+	default:
+		// Channel full — drain the stale payload and replace with the latest.
+		// This is safe because the worker always calls latestPolicyReconcileState
+		// which drains any remaining items before processing, so at most one
+		// intermediate payload is dropped per poll cycle.
+		log.Debug().
+			Str("context", "PolicyReconcileEnqueue").
+			Msg("Reconcile channel full, replacing pending payload with latest")
+		select {
+		case <-service.policyReconcileCh:
+		default:
+		}
+		select {
+		case service.policyReconcileCh <- queued:
+		default:
+			log.Warn().
+				Str("context", "PolicyReconcileEnqueue").
+				Msg("Failed to enqueue policy reconcile after drain, payload dropped")
+		}
+	}
+}
+
+func (service *PollService) startPolicyReconcileWorker() {
+	for states := range service.policyReconcileCh {
+		service.reconcilePolicies(service.latestPolicyReconcileState(states))
+	}
+}
+
+func (service *PollService) latestPolicyReconcileState(states []portainer.PolicyDesiredState) []portainer.PolicyDesiredState {
+	for {
+		select {
+		case latest := <-service.policyReconcileCh:
+			states = latest
+		default:
+			return states
+		}
+	}
+}
+
+// toPolicyActualStates converts reconciler ActualState entries to the payload type
+// sent to the server via ReportPolicyStatuses.
+func toPolicyActualStates(states []policyreconcile.ActualState) []portainer.PolicyActualState {
+	out := make([]portainer.PolicyActualState, len(states))
+	for i, s := range states {
+		out[i] = portainer.PolicyActualState{
+			PolicyID:    s.PolicyID,
+			Type:        s.Type,
+			Fingerprint: s.Fingerprint,
+			Status:      string(s.Status),
+			Message:     s.Message,
+		}
+	}
+	return out
+}
+
+// toDesiredStates converts the payload PolicyDesiredState slice to the reconciler's
+// internal DesiredState type. json.RawMessage and []byte are both byte slices.
+func toDesiredStates(states []portainer.PolicyDesiredState) []policyreconcile.DesiredState {
+	out := make([]policyreconcile.DesiredState, len(states))
+	for i, s := range states {
+		out[i] = policyreconcile.DesiredState{
+			PolicyID:    s.PolicyID,
+			Type:        s.Type,
+			Fingerprint: s.Fingerprint,
+			Config:      s.Config,
+		}
+	}
+	return out
+}
+
+// hasPerPolicyPayload reports whether the server sent the per-policy payload field.
+// A non-nil pointer (even to an empty slice) means the server supports the new
+// format — the agent must run reconcilePolicies regardless of whether the slice is
+// empty, because an empty desired list signals "all policies deleted: remove all
+// active handlers". A nil pointer means the field was absent (old server) → use
+// the legacy per-chart path.
+func hasPerPolicyPayload(status *client.PollStatusResponse) bool {
+	return status.PolicyStates != nil
+}
+
+func desiredStateIDs(states []policyreconcile.DesiredState) []portainer.PolicyID {
+	ids := make([]portainer.PolicyID, len(states))
+	for i, s := range states {
+		ids[i] = s.PolicyID
+	}
+	return ids
 }

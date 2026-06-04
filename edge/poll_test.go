@@ -17,6 +17,8 @@ import (
 	agentmetrics "github.com/portainer/agent/http/handler/metrics"
 	"github.com/portainer/agent/internals/mocks"
 	"github.com/portainer/agent/kubernetes"
+	"github.com/portainer/agent/policyreconcile"
+	portainer "github.com/portainer/portainer/api"
 	pkgmetrics "github.com/portainer/portainer/pkg/metrics"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -357,6 +359,139 @@ func TestPushPerformanceMetricsSkipsEtcdUpdateOnCollectionFailure(t *testing.T) 
 	require.Contains(t, body, pkgmetrics.ClusterCPUUsageCoresMetric)
 	require.Contains(t, body, pkgmetrics.ClusterEtcdHealthyMetric+" 1")
 	require.Contains(t, body, pkgmetrics.ClusterEtcdHealthValidMetric+" 0")
+}
+
+// TestVersionSkew_NewAgentOldServer verifies that when an older server sends a
+// response with no PolicyStates, the new agent falls back to the legacy
+// PolicyChartSummaries path without error.
+func TestVersionSkew_NewAgentOldServer(t *testing.T) {
+	// Old server: response has PolicyChartSummaries but no PolicyStates.
+	oldServerResponse := &client.PollStatusResponse{
+		PolicyChartSummaries: []portainer.PolicyChartSummary{
+			{ChartName: "gatekeeper", Fingerprint: "fp1"},
+		},
+	}
+	assert.False(t, hasPerPolicyPayload(oldServerResponse),
+		"old server response (no PolicyStates) must not trigger per-policy path")
+}
+
+// TestVersionSkew_NewAgentNewServer verifies that when a new server sends
+// PolicyStates the new agent routes through the per-policy path.
+func TestVersionSkew_NewAgentNewServer(t *testing.T) {
+	states := []portainer.PolicyDesiredState{
+		{PolicyID: 42, Type: "helm-k8s", Fingerprint: "fp1"},
+	}
+	newServerResponse := &client.PollStatusResponse{PolicyStates: &states}
+	assert.True(t, hasPerPolicyPayload(newServerResponse),
+		"new server response (with PolicyStates) must trigger per-policy path")
+}
+
+// TestVersionSkew_NewServerNoPolicies verifies that a new server with zero active
+// policies still triggers the per-policy path (empty desired list → remove all
+// active handlers). This is the key regression this fix addresses.
+func TestVersionSkew_NewServerNoPolicies(t *testing.T) {
+	empty := []portainer.PolicyDesiredState{}
+	response := &client.PollStatusResponse{PolicyStates: &empty}
+	assert.True(t, hasPerPolicyPayload(response),
+		"new server with no policies must still trigger reconcilePolicies([]) to remove active handlers")
+}
+
+// TestVersionSkew_EmptyResponse verifies that a response with neither field
+// (e.g. unparseable agent version causes PayloadVariantNone on the server)
+// does not trigger the per-policy path.
+func TestVersionSkew_EmptyResponse(t *testing.T) {
+	empty := &client.PollStatusResponse{}
+	assert.False(t, hasPerPolicyPayload(empty), "nil PolicyStates must use legacy path")
+}
+
+func TestEnqueuePolicyReconcileKeepsLatestPendingPayload(t *testing.T) {
+	service := &PollService{
+		policyReconcileCh: make(chan []portainer.PolicyDesiredState, 1),
+	}
+
+	first := []portainer.PolicyDesiredState{{PolicyID: 1, Fingerprint: "old"}}
+	second := []portainer.PolicyDesiredState{{PolicyID: 2, Fingerprint: "new"}}
+
+	service.enqueuePolicyReconcile(first)
+	service.enqueuePolicyReconcile(second)
+
+	queued := <-service.policyReconcileCh
+	require.Len(t, queued, 1)
+	assert.Equal(t, portainer.PolicyID(2), queued[0].PolicyID)
+	assert.Equal(t, "new", queued[0].Fingerprint)
+}
+
+func TestToPolicyActualStates_FieldMapping(t *testing.T) {
+	t.Parallel()
+	in := []policyreconcile.ActualState{
+		{PolicyID: 1, Type: "helm-k8s", Fingerprint: "fp1", Status: policyreconcile.StatusApplied, Message: ""},
+		{PolicyID: 2, Type: "helm-k8s", Fingerprint: "", Status: policyreconcile.StatusFailed, Message: "install failed"},
+		{PolicyID: 3, Type: "helm-k8s", Fingerprint: "fp3", Status: policyreconcile.StatusApplying, Message: "in progress"},
+	}
+
+	out := toPolicyActualStates(in)
+
+	require.Len(t, out, 3)
+	assert.Equal(t, portainer.PolicyID(1), out[0].PolicyID)
+	assert.Equal(t, "helm-k8s", out[0].Type)
+	assert.Equal(t, "fp1", out[0].Fingerprint)
+	assert.Equal(t, "applied", out[0].Status)
+	assert.Empty(t, out[0].Message)
+
+	assert.Equal(t, portainer.PolicyID(2), out[1].PolicyID)
+	assert.Equal(t, "failed", out[1].Status)
+	assert.Equal(t, "install failed", out[1].Message)
+	assert.Empty(t, out[1].Fingerprint)
+
+	assert.Equal(t, "applying", out[2].Status)
+}
+
+func TestToPolicyActualStates_EmptyInput(t *testing.T) {
+	t.Parallel()
+	assert.Empty(t, toPolicyActualStates(nil))
+	assert.Empty(t, toPolicyActualStates([]policyreconcile.ActualState{}))
+}
+
+func TestToDesiredStates_FieldMapping(t *testing.T) {
+	t.Parallel()
+	cfg := []byte(`{"charts":[]}`)
+	in := []portainer.PolicyDesiredState{
+		{PolicyID: 42, Type: "helm-k8s", Fingerprint: "abc", Config: cfg},
+		{PolicyID: 99, Type: "helm-k8s", Fingerprint: "", Config: nil},
+	}
+
+	out := toDesiredStates(in)
+
+	require.Len(t, out, 2)
+	assert.Equal(t, portainer.PolicyID(42), out[0].PolicyID)
+	assert.Equal(t, "helm-k8s", out[0].Type)
+	assert.Equal(t, "abc", out[0].Fingerprint)
+	assert.Equal(t, policyreconcile.DesiredState{}.Config, out[1].Config)
+	assert.EqualValues(t, cfg, out[0].Config)
+}
+
+func TestToDesiredStates_EmptyInput(t *testing.T) {
+	t.Parallel()
+	assert.Empty(t, toDesiredStates(nil))
+}
+
+func TestDesiredStateIDs_ExtractsAllIDs(t *testing.T) {
+	t.Parallel()
+	states := []policyreconcile.DesiredState{
+		{PolicyID: 10},
+		{PolicyID: 20},
+		{PolicyID: 30},
+	}
+	ids := desiredStateIDs(states)
+	require.Len(t, ids, 3)
+	assert.Equal(t, portainer.PolicyID(10), ids[0])
+	assert.Equal(t, portainer.PolicyID(20), ids[1])
+	assert.Equal(t, portainer.PolicyID(30), ids[2])
+}
+
+func TestDesiredStateIDs_EmptyInput(t *testing.T) {
+	t.Parallel()
+	assert.Empty(t, desiredStateIDs(nil))
 }
 
 func TestPushPerformanceMetricsUpdatesTLSCertGaugeOnSuccess(t *testing.T) {

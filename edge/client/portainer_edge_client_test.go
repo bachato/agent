@@ -16,6 +16,7 @@ import (
 	"github.com/portainer/portainer/pkg/fips"
 	pkgmetrics "github.com/portainer/portainer/pkg/metrics"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -259,6 +260,95 @@ func TestGetEnvironmentStatusSendsContainerEngineHeaderFromRuntimePlatform(t *te
 
 	_, err := client.GetEnvironmentStatus()
 	require.NoError(t, err)
+}
+
+// TestReportPolicyStatuses_SuccessOn204 verifies that a 204 response results in
+// no error and exactly one request is sent (no retry logic on this path).
+func TestReportPolicyStatuses_SuccessOn204(t *testing.T) {
+	t.Parallel()
+	fips.InitFIPS(false)
+
+	var requests int32
+	httpClient := BuildHTTPClient(30, &agent.Options{})
+	httpClient.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		atomic.AddInt32(&requests, 1)
+		require.Equal(t, http.MethodPut, r.Method)
+		require.Equal(t, "/api/endpoints/1/edge/policies/statuses", r.URL.Path)
+		require.Equal(t, "edge-id", r.Header.Get(agent.HTTPEdgeIdentifierHeaderName))
+		return &http.Response{
+			StatusCode: http.StatusNoContent,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Header:     make(http.Header),
+			Request:    r,
+		}, nil
+	})
+
+	c := &PortainerEdgeClient{
+		edgeID:          "edge-id",
+		getEndpointIDFn: func() portainer.EndpointID { return 1 },
+		httpClient:      httpClient,
+		serverAddress:   "http://edge.test",
+	}
+
+	err := c.ReportPolicyStatuses([]portainer.PolicyActualState{
+		{PolicyID: 1, Type: "helm-k8s", Fingerprint: "fp", Status: "applied"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, int32(1), atomic.LoadInt32(&requests), "exactly one request must be sent")
+}
+
+// TestReportPolicyStatuses_DoesNotRetryOnNon204 verifies that a non-204 response
+// (e.g. 404 from a pre-Phase-3 server) returns nil — the method logs the failure
+// at Debug level and relies on the Phase-3 dual-emit legacy fallback for coverage.
+// This distinguishes it from UpdatePolicyChartStatuses which retries on server errors.
+func TestReportPolicyStatuses_DoesNotRetryOnNon204(t *testing.T) {
+	t.Parallel()
+	fips.InitFIPS(false)
+
+	var requests int32
+	httpClient := BuildHTTPClient(30, &agent.Options{})
+	httpClient.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		atomic.AddInt32(&requests, 1)
+		return &http.Response{
+			StatusCode: http.StatusNotFound,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Header:     make(http.Header),
+			Request:    r,
+		}, nil
+	})
+
+	c := &PortainerEdgeClient{
+		edgeID:          "edge-id",
+		getEndpointIDFn: func() portainer.EndpointID { return 1 },
+		httpClient:      httpClient,
+		serverAddress:   "http://edge.test",
+	}
+
+	err := c.ReportPolicyStatuses(nil)
+	require.NoError(t, err, "non-204 must not return an error (logged at Debug only)")
+	assert.Equal(t, int32(1), atomic.LoadInt32(&requests), "must not retry on non-204")
+}
+
+// TestReportPolicyStatuses_ReturnsErrorOnTransportFailure verifies that a transport-
+// level error (e.g. connection refused) is returned as an error to the caller.
+func TestReportPolicyStatuses_ReturnsErrorOnTransportFailure(t *testing.T) {
+	t.Parallel()
+	fips.InitFIPS(false)
+
+	httpClient := BuildHTTPClient(30, &agent.Options{})
+	httpClient.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return nil, errors.New("dial timeout")
+	})
+
+	c := &PortainerEdgeClient{
+		edgeID:          "edge-id",
+		getEndpointIDFn: func() portainer.EndpointID { return 1 },
+		httpClient:      httpClient,
+		serverAddress:   "http://edge.test",
+	}
+
+	err := c.ReportPolicyStatuses(nil)
+	require.Error(t, err)
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

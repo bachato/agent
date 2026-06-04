@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/rs/zerolog/log"
+	segmentjson "github.com/segmentio/encoding/json"
 )
 
 const (
@@ -252,6 +253,8 @@ func (service *PollService) processAsyncCommands(commands []client.AsyncCommand)
 			err = service.processNormalStackCommand(ctx, command)
 		case "edgeConfig":
 			err = service.processEdgeConfigCommand(command)
+		case "policyStates":
+			err = service.processPolicyStates(ctx, command)
 		case "policyHelmCharts":
 			err = service.processPolicyHelmCharts(command)
 		default:
@@ -451,6 +454,44 @@ func (service *PollService) processEdgeConfigCommand(cmd client.AsyncCommand) er
 	return newOperationError("edgeConfig", cmd.Operation, err)
 }
 
+// processPolicyStates handles the "policyStates" async command (per-policy payload).
+// It caches any chart bundles for on-demand GetCharts, then drives the reconciler
+// directly instead of the legacy PolicyManager.
+func (service *PollService) processPolicyStates(ctx context.Context, cmd client.AsyncCommand) error {
+	var payload client.PolicyStatesCommandPayload
+
+	// Use JSON re-marshal/unmarshal rather than mapstructure. The server encodes
+	// []byte fields (e.g. PolicyDesiredState.Config) as base64 strings in JSON;
+	// mapstructure converts string→[]byte as raw string bytes (not base64-decoded),
+	// which would corrupt Config and cause HelmHandler.Apply to fail.
+	raw, err := segmentjson.Marshal(cmd.Value)
+	if err != nil {
+		return newOperationError("processPolicyStates", cmd.Operation, fmt.Errorf("re-marshal command value: %w", err))
+	}
+	if err := segmentjson.Unmarshal(raw, &payload); err != nil {
+		return newOperationError("processPolicyStates", cmd.Operation, err)
+	}
+
+	// Cache chart bundles so HelmHandler.reconcileCharts can read them via GetCharts.
+	// We intentionally reuse the same SetChartsResponse / PolicyHelmCharts cache path
+	// as the legacy "policyHelmCharts" command — both old and new commands store
+	// tarballs in the same in-memory cache, which GetCharts reads from on any
+	// subsequent call. No separate cache is needed for the new command type.
+	if len(payload.ChartBundles) > 0 {
+		cacher, ok := service.portainerClient.(client.ChartCacher)
+		if !ok {
+			return newOperationError("processPolicyStates", cmd.Operation, errors.New("portainer client does not support chart caching"))
+		}
+		cacher.SetChartsResponse(&client.PolicyHelmCharts{
+			PolicyChartBundles:    payload.ChartBundles,
+			RestoreSettingsBundle: payload.RestoreBundle,
+		})
+	}
+
+	service.reconcilePolicies(payload.States)
+	return nil
+}
+
 func (service *PollService) processPolicyHelmCharts(cmd client.AsyncCommand) error {
 	var policies client.PolicyHelmCharts
 
@@ -458,8 +499,8 @@ func (service *PollService) processPolicyHelmCharts(cmd client.AsyncCommand) err
 		return newOperationError("processPolicyHelmCharts", cmd.Operation, err)
 	}
 
-	if asyncClient, ok := service.portainerClient.(*client.PortainerAsyncClient); ok {
-		asyncClient.SetChartsResponse(&policies)
+	if cacher, ok := service.portainerClient.(client.ChartCacher); ok {
+		cacher.SetChartsResponse(&policies)
 	} else {
 		return newOperationError("processPolicyHelmCharts", cmd.Operation, errors.New("portainer client does not support setting policy helm charts response"))
 	}

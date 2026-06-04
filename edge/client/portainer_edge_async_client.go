@@ -148,7 +148,14 @@ type snapshot struct {
 	StackStatusArray map[portainer.EdgeStackID][]portainer.EdgeStackDeploymentStatus `json:"stackStatusArray,omitempty"`
 	JobsStatus       map[portainer.EdgeJobID]agent.EdgeJobStatus                     `json:"jobsStatus,omitempty"`
 	EdgeConfigStates map[EdgeConfigID]EdgeConfigStateType                            `json:"edgeConfigStates,omitempty"`
-	PolicyStatus     map[string][]portainer.PolicyChartStatus                        `json:"policyStatus"`
+	// PolicyChartStatuses carries legacy per-chart statuses (keyed by chart name).
+	// Used by pre-Phase-3 servers. Removed when the legacy per-chart endpoint is deleted.
+	PolicyChartStatuses map[string][]portainer.PolicyChartStatus `json:"policyStatus"` // JSON key kept for backward compat
+	// PolicyStatuses carries per-policy statuses for servers that support the new
+	// per-policy status endpoint (PUT /endpoints/{id}/edge/policies/statuses).
+	// Do not use omitempty: an empty slice means "clear all per-policy statuses",
+	// while nil means "no change".
+	PolicyStatuses []portainer.PolicyActualState `json:"policyActualStatuses"`
 }
 
 type AsyncResponse struct {
@@ -254,7 +261,8 @@ func (client *PortainerAsyncClient) GetEnvironmentStatus(flags ...string) (*Poll
 		payload.Snapshot.StackStatusArray = client.nextSnapshot.StackStatusArray
 		payload.Snapshot.JobsStatus = client.nextSnapshot.JobsStatus
 		payload.Snapshot.EdgeConfigStates = client.nextSnapshot.EdgeConfigStates
-		payload.Snapshot.PolicyStatus = client.nextSnapshot.PolicyStatus
+		payload.Snapshot.PolicyChartStatuses = client.nextSnapshot.PolicyChartStatuses
+		payload.Snapshot.PolicyStatuses = client.nextSnapshot.PolicyStatuses
 		client.nextSnapshotMutex.Unlock()
 	}
 
@@ -526,16 +534,28 @@ func (client *PortainerAsyncClient) UpdatePolicyChartStatuses(statuses []portain
 	defer client.nextSnapshotMutex.Unlock()
 
 	if len(statuses) == 0 {
+		client.nextSnapshot.PolicyChartStatuses = map[string][]portainer.PolicyChartStatus{}
 		return nil
 	}
 
-	if client.nextSnapshot.PolicyStatus == nil {
-		client.nextSnapshot.PolicyStatus = make(map[string][]portainer.PolicyChartStatus)
+	if client.nextSnapshot.PolicyChartStatuses == nil {
+		client.nextSnapshot.PolicyChartStatuses = make(map[string][]portainer.PolicyChartStatus)
 	}
 
 	for _, status := range statuses {
-		client.nextSnapshot.PolicyStatus[status.ChartName] = append(client.nextSnapshot.PolicyStatus[status.ChartName], status)
+		client.nextSnapshot.PolicyChartStatuses[status.ChartName] = append(client.nextSnapshot.PolicyChartStatuses[status.ChartName], status)
 	}
+
+	return nil
+}
+
+// ReportPolicyStatuses stores per-policy status in the async snapshot for delivery
+// on the next async poll. Async agents do not make per-request HTTP calls.
+func (client *PortainerAsyncClient) ReportPolicyStatuses(statuses []portainer.PolicyActualState) error {
+	client.nextSnapshotMutex.Lock()
+	defer client.nextSnapshotMutex.Unlock()
+
+	client.nextSnapshot.PolicyStatuses = statuses
 
 	return nil
 }
@@ -772,7 +792,8 @@ func (client *PortainerAsyncClient) rotateSnapshots(currentSnapshot snapshot, as
 	client.nextSnapshot.StackStatusArray = nil
 	client.nextSnapshot.JobsStatus = nil
 	client.nextSnapshot.EdgeConfigStates = nil
-	client.nextSnapshot.PolicyStatus = nil
+	client.nextSnapshot.PolicyChartStatuses = nil
+	client.nextSnapshot.PolicyStatuses = nil
 	client.stackLogCollectionQueue = nil
 }
 

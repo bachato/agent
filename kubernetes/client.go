@@ -469,3 +469,20 @@ func kindToResource(kind string) string {
 	}
 	return lower + "s"
 }
+
+// CRDResourceReady checks whether a CRD's API endpoint is registered in discovery
+// by attempting to list resources of that type. crdName is the full CRD name
+// (e.g. "k8spspflexvolumes.constraints.gatekeeper.sh").
+func (kcl *KubeClient) CRDResourceReady(ctx context.Context, crdName string) bool {
+	resource, group, ok := strings.Cut(crdName, ".")
+	if !ok {
+		return false
+	}
+	gvr := schema.GroupVersionResource{
+		Group:    group,
+		Version:  "v1beta1",
+		Resource: resource,
+	}
+	_, err := kcl.dynamicCli.Resource(gvr).List(ctx, metav1.ListOptions{Limit: 1})
+	return err == nil
+}

@@ -137,6 +137,20 @@ func (mr *MockPortainerClientMockRecorder) GetEnvironmentStatus(flags ...any) *g
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetEnvironmentStatus", reflect.TypeOf((*MockPortainerClient)(nil).GetEnvironmentStatus), flags...)
 }
 
+// ReportPolicyStatuses mocks base method.
+func (m *MockPortainerClient) ReportPolicyStatuses(statuses []portainer.PolicyActualState) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReportPolicyStatuses", statuses)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ReportPolicyStatuses indicates an expected call of ReportPolicyStatuses.
+func (mr *MockPortainerClientMockRecorder) ReportPolicyStatuses(statuses any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReportPolicyStatuses", reflect.TypeOf((*MockPortainerClient)(nil).ReportPolicyStatuses), statuses)
+}
+
 // SetAlertState mocks base method.
 func (m *MockPortainerClient) SetAlertState(state *metrics.EdgeAlertState) {
 	m.ctrl.T.Helper()
@@ -227,4 +241,40 @@ func (m *MockPortainerClient) UpdatePolicyChartStatuses(statuses []portainer.Pol
 func (mr *MockPortainerClientMockRecorder) UpdatePolicyChartStatuses(statuses any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdatePolicyChartStatuses", reflect.TypeOf((*MockPortainerClient)(nil).UpdatePolicyChartStatuses), statuses)
+}
+
+// MockChartCacher is a mock of ChartCacher interface.
+type MockChartCacher struct {
+	ctrl     *gomock.Controller
+	recorder *MockChartCacherMockRecorder
+	isgomock struct{}
+}
+
+// MockChartCacherMockRecorder is the mock recorder for MockChartCacher.
+type MockChartCacherMockRecorder struct {
+	mock *MockChartCacher
+}
+
+// NewMockChartCacher creates a new mock instance.
+func NewMockChartCacher(ctrl *gomock.Controller) *MockChartCacher {
+	mock := &MockChartCacher{ctrl: ctrl}
+	mock.recorder = &MockChartCacherMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockChartCacher) EXPECT() *MockChartCacherMockRecorder {
+	return m.recorder
+}
+
+// SetChartsResponse mocks base method.
+func (m *MockChartCacher) SetChartsResponse(chart *client.PolicyHelmCharts) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SetChartsResponse", chart)
+}
+
+// SetChartsResponse indicates an expected call of SetChartsResponse.
+func (mr *MockChartCacherMockRecorder) SetChartsResponse(chart any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetChartsResponse", reflect.TypeOf((*MockChartCacher)(nil).SetChartsResponse), chart)
 }

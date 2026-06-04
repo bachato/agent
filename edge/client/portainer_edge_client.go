@@ -427,6 +427,44 @@ func (client *PortainerEdgeClient) UpdatePolicyChartStatuses(statuses []portaine
 	return nil
 }
 
+func (client *PortainerEdgeClient) ReportPolicyStatuses(statuses []portainer.PolicyActualState) error {
+	payload := struct {
+		Statuses []portainer.PolicyActualState `json:"statuses"`
+	}{Statuses: statuses}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	requestURL := fmt.Sprintf("%s/api/endpoints/%d/edge/policies/statuses", client.serverAddress, client.getEndpointIDFn())
+
+	req, err := http.NewRequest(http.MethodPut, requestURL, bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set(agent.HTTPEdgeIdentifierHeaderName, client.edgeID)
+
+	resp, err := client.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to report policy statuses: %w", err)
+	}
+
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		// Non-204 responses are logged at Debug level; the legacy UpdatePolicyChartStatuses
+		// dual-emit covers the 404 case for servers without this endpoint.
+		log.Debug().
+			Int("response_code", resp.StatusCode).
+			Msg("ReportPolicyStatuses: non-204 response")
+	}
+
+	return nil
+}
+
 // SetEdgeJobStatus sends the jobID log to the Portainer server
 func (client *PortainerEdgeClient) SetEdgeJobStatus(edgeJobStatus agent.EdgeJobStatus) error {
 	payload := logFilePayload{

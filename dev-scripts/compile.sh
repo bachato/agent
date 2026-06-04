@@ -25,10 +25,10 @@ function compile_agent() {
 
     ldflags="-s"
     if [[ -n "$AGENT_VERSION" ]]; then
-        ldflags="$ldflags -X 'github.com/portainer/agent.Version=${AGENT_VERSION}'"
+        ldflags="$ldflags -X github.com/portainer/agent.Version=${AGENT_VERSION}"
     fi
 
-    GOOS="linux" GOARCH="$(go env GOARCH)" CGO_ENABLED=0 "${cmd[@]}" --ldflags "$ldflags"
+    GOOS="linux" GOARCH="${GOARCH:-$(go env GOARCH)}" CGO_ENABLED=0 "${cmd[@]}" --ldflags "$ldflags"
 
     rc=$?
     if [[ $rc != 0 ]]; then exit $rc; fi
@@ -45,7 +45,7 @@ function compile_credential_helper() {
     mkdir -p $TARGET_DIST
 
     cd cmd/docker-credential-portainer || exit 1
-    GOOS="linux" GOARCH="$(go env GOARCH)" CGO_ENABLED=0 go build -trimpath --installsuffix cgo --ldflags '-s'
+    GOOS="linux" GOARCH="${GOARCH:-$(go env GOARCH)}" CGO_ENABLED=0 go build -trimpath --installsuffix cgo --ldflags '-s'
     rc=$?
     if [[ $rc != 0 ]]; then exit $rc; fi
     cd ../..

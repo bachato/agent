@@ -1,18 +1,24 @@
 package edge
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
 	"sync"
 	"time"
 
+	"context"
+
 	"github.com/portainer/agent"
+	"github.com/portainer/agent/deployer"
 	"github.com/portainer/agent/edge/aws"
 	"github.com/portainer/agent/edge/client"
 	"github.com/portainer/agent/edge/policies"
+	"github.com/portainer/agent/edge/policies/helm"
 	"github.com/portainer/agent/edge/scheduler"
 	"github.com/portainer/agent/edge/stack"
+	"github.com/portainer/agent/exec"
 	agentmetrics "github.com/portainer/agent/http/handler/metrics"
 	"github.com/portainer/agent/kubernetes"
 	portainer "github.com/portainer/portainer/api"
@@ -131,7 +137,24 @@ func (manager *Manager) Start() error {
 	manager.logsManager = scheduler.NewLogsManager(portainerClient)
 	manager.logsManager.Start()
 
-	policyManager := policies.NewPolicyManager(portainerClient, manager.kubeClient, sdk.NewHelmSDKPackageManager())
+	helmPackageManager := sdk.NewHelmSDKPackageManager()
+	coordinator := helm.NewRestoreCoordinator(buildKubernetesRestoreApplier(manager.kubeClient))
+
+	// Create chartReporter before PolicyManager so both the legacy coordinator
+	// and the reconciler factory share the same reporter instance from the start.
+	var chartReporter *helm.ChartStatusReporter
+	if manager.kubeClient != nil {
+		chartReporter = helm.NewChartStatusReporter()
+	}
+
+	policyManager := policies.NewPolicyManager(
+		portainerClient,
+		manager.kubeClient,
+		helmPackageManager,
+		coordinator,
+		chartReporter,
+		0, // endpointID unknown at startup; server resolves from request context
+	)
 
 	pollService, err := newPollService(
 		manager,
@@ -147,7 +170,44 @@ func (manager *Manager) Start() error {
 	}
 	manager.pollService = pollService
 
+	// K8s platform: register the helm-k8s factory with the reconciler (per-policy
+	// payload path) and the restore coordinator as a poll hook.
+	if manager.kubeClient != nil {
+		manager.pollService.RegisterReconcilerFactory(
+			"helm-k8s",
+			helm.NewHandler(manager.kubeClient, helmPackageManager, portainerClient, coordinator, chartReporter),
+		)
+		manager.pollService.RegisterPollHook(coordinator)
+		manager.pollService.SetChartReporter(chartReporter)
+	}
+
 	return manager.startEdgeBackgroundProcess()
+}
+
+// buildKubernetesRestoreApplier returns an ApplierFunc that kubectl-applies a
+// base64-encoded YAML manifest via the existing KubernetesDeployer.
+func buildKubernetesRestoreApplier(kubeClient *kubernetes.KubeClient) helm.ApplierFunc {
+	return func(ctx context.Context, manifest string) error {
+		decodedManifest, err := base64.StdEncoding.DecodeString(manifest)
+		if err != nil {
+			return fmt.Errorf("decode restore manifest: %w", err)
+		}
+
+		f, err := os.CreateTemp("", "portainer-restore-*.yaml")
+		if err != nil {
+			return fmt.Errorf("create temp manifest file: %w", err)
+		}
+		defer func() { _ = os.Remove(f.Name()) }()
+		if _, err := f.Write(decodedManifest); err != nil {
+			_ = f.Close()
+			return fmt.Errorf("write manifest: %w", err)
+		}
+		if err := f.Close(); err != nil {
+			return fmt.Errorf("close manifest file: %w", err)
+		}
+		kubeDeployer := exec.NewKubernetesDeployer(kubeClient)
+		return kubeDeployer.Deploy(ctx, "portainer-policy-restore", []string{f.Name()}, deployer.DeployOptions{})
+	}
 }
 
 // ResetActivityTimer resets the activity timer

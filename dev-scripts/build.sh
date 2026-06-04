@@ -16,8 +16,11 @@ function build_command() {
 function build() {
     docker rmi -f "$1" &>/dev/null || true
 
+    local arch="${GOARCH:-$(go env GOARCH)}"
+    local platform="linux/${arch}"
+
     msg "Image build..."
-    docker build --no-cache -t "$1" -f build/linux/Dockerfile . &>/dev/null
+    docker buildx build --no-cache --platform "$platform" -t "$1" -f build/linux/Dockerfile . &>/dev/null
 
     msg "Image is built: $1"
 }
