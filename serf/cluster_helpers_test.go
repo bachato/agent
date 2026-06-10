@@ -85,7 +85,10 @@ func createSerfNodeAt(t *testing.T, name, addr string, tags map[string]string) (
 	var err error
 	s, err = serf.Create(nodeConf)
 	require.NoError(t, err)
-	cancel = func() { s.Shutdown() } //nolint:errcheck
+	cancel = func() {
+		err := s.Shutdown()
+		require.NoError(t, err)
+	}
 	t.Cleanup(cancel)
 	return
 }
@@ -102,7 +105,10 @@ func createSerfNode(t *testing.T, name string, tags map[string]string) (*serf.Se
 	_ = l.Close() // release port immediately before Serf binds it
 	s, err := serf.Create(nodeConf)
 	require.NoError(t, err)
-	cancel := func() { s.Shutdown() } //nolint:errcheck
+	cancel := func() {
+		err := s.Shutdown()
+		require.NoError(t, err)
+	}
 	t.Cleanup(cancel)
 	return s, addr, ch, cancel
 }

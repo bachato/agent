@@ -3,7 +3,6 @@ package kubernetes
 import (
 	"context"
 	"encoding/pem"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -89,10 +88,10 @@ func TestCollectAPIServerCert(t *testing.T) {
 
 func TestBuildAPIServerTLSTarget(t *testing.T) {
 	tests := []struct {
-		name          string
-		host          string
-		expected      string
-		expectedErr   string
+		name        string
+		host        string
+		expected    string
+		expectedErr string
 	}{
 		{
 			name:     "defaults to 443 for dns host",
@@ -137,22 +136,4 @@ func TestBuildAPIServerTLSTarget(t *testing.T) {
 			assert.Equal(t, tc.expected, target)
 		})
 	}
-}
-
-func TestAsTLSConn(t *testing.T) {
-	t.Run("returns error when connection is nil", func(t *testing.T) {
-		_, err := asTLSConn(nil)
-		require.Error(t, err)
-		assert.ErrorContains(t, err, "kubernetes api server connection is nil")
-	})
-
-	t.Run("returns error when connection is not tls", func(t *testing.T) {
-		connA, connB := net.Pipe()
-		defer connA.Close() //nolint:errcheck
-		defer connB.Close() //nolint:errcheck
-
-		_, err := asTLSConn(connA)
-		require.Error(t, err)
-		assert.ErrorContains(t, err, "kubernetes api server connection is not tls")
-	})
 }

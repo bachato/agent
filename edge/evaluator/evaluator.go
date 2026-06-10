@@ -148,7 +148,11 @@ func (s *Service) Start() {
 	go s.manager.Run()
 
 	if s.scrapeManager != nil {
-		go s.scrapeManager.Run(s.scrapeTsets) //nolint:errcheck // Run returns only on shutdown
+		go func() {
+			if err := s.scrapeManager.Run(s.scrapeTsets); err != nil {
+				log.Warn().Err(err).Msg("evaluator: scrape manager exited")
+			}
+		}()
 	}
 
 	if s.notifier != nil {

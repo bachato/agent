@@ -112,24 +112,24 @@ func sumDockerBytes(dockerDiskUsage dockertypes.DiskUsage) dockerBreakdown {
 	var b dockerBreakdown
 
 	if dockerDiskUsage.LayersSize > 0 {
-		b.imageBytes = uint64(dockerDiskUsage.LayersSize) //nolint:gosec // guarded by > 0 check
+		b.imageBytes = uint64(dockerDiskUsage.LayersSize)
 	}
 
 	for _, c := range dockerDiskUsage.Containers {
 		if c.SizeRw > 0 {
-			b.containerBytes += uint64(c.SizeRw) //nolint:gosec // guarded by > 0 check
+			b.containerBytes += uint64(c.SizeRw)
 		}
 	}
 
 	for _, v := range dockerDiskUsage.Volumes {
 		if v.UsageData != nil && v.UsageData.Size > 0 {
-			b.volumeBytes += uint64(v.UsageData.Size) //nolint:gosec // guarded by > 0 check
+			b.volumeBytes += uint64(v.UsageData.Size)
 		}
 	}
 
 	for _, bc := range dockerDiskUsage.BuildCache {
 		if bc.Size > 0 {
-			b.buildCacheBytes += uint64(bc.Size) //nolint:gosec // guarded by > 0 check
+			b.buildCacheBytes += uint64(bc.Size)
 		}
 	}
 

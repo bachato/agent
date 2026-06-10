@@ -40,7 +40,7 @@ func filesystemFreeBytes(dockerRootDir string) (uint64, error) {
 	if err := syscall.Statfs(dockerRootDir, &stat); err != nil {
 		return 0, fmt.Errorf("failed to stat filesystem at %s. Error: %w", dockerRootDir, err)
 	}
-	return stat.Bavail * uint64(stat.Bsize), nil //nolint:gosec // Bsize is positive on real filesystems
+	return stat.Bavail * uint64(stat.Bsize), nil
 }
 
 // storageUsageForPath returns a StorageUsage snapshot for the filesystem
@@ -53,8 +53,8 @@ func storageUsageForPath(path string) (StorageUsage, error) {
 	if stat.Blocks == 0 {
 		return StorageUsage{}, nil
 	}
-	totalBytes := stat.Blocks * uint64(stat.Bsize) //nolint:gosec // Bsize is positive on real filesystems
-	availBytes := stat.Bavail * uint64(stat.Bsize) //nolint:gosec
+	totalBytes := stat.Blocks * uint64(stat.Bsize)
+	availBytes := stat.Bavail * uint64(stat.Bsize)
 	return StorageUsage{
 		TotalBytes:     totalBytes,
 		AvailableBytes: availBytes,

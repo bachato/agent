@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/portainer/portainer/api/crypto"
+	"github.com/portainer/portainer/api/logs"
 )
 
 const (
@@ -52,20 +53,15 @@ func CollectAPIServerCert(ctx context.Context, kc *KubeClient) (*TLSCertInfo, er
 	dialCtx, cancel := context.WithTimeout(ctx, tlsDialTimeout)
 	defer cancel()
 
-	dialer := &tls.Dialer{
-		NetDialer: &net.Dialer{},
-		Config:    crypto.CreateTLSConfiguration(true), //nolint:forbidigo // assigned via approved helper
-	}
-
-	rawConn, err := dialer.DialContext(dialCtx, "tcp", tlsTarget)
+	netConn, err := (&net.Dialer{}).DialContext(dialCtx, "tcp", tlsTarget)
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial kubernetes api server tls endpoint. Error: %w", err)
 	}
-	defer rawConn.Close() //nolint:errcheck
+	defer logs.CloseAndLogErr(netConn)
 
-	conn, err := asTLSConn(rawConn)
-	if err != nil {
-		return nil, err
+	conn := tls.Client(netConn, crypto.CreateTLSConfiguration(true))
+	if err = conn.HandshakeContext(dialCtx); err != nil {
+		return nil, fmt.Errorf("tls handshake with kubernetes api server failed. Error: %w", err)
 	}
 
 	peerCerts := conn.ConnectionState().PeerCertificates
@@ -84,19 +80,6 @@ func CollectAPIServerCert(ctx context.Context, kc *KubeClient) (*TLSCertInfo, er
 		CN:       commonName,
 		NotAfter: leaf.NotAfter,
 	}, nil
-}
-
-func asTLSConn(rawConn net.Conn) (*tls.Conn, error) {
-	if rawConn == nil {
-		return nil, errors.New("kubernetes api server connection is nil")
-	}
-
-	tlsConn, ok := rawConn.(*tls.Conn)
-	if !ok {
-		return nil, fmt.Errorf("kubernetes api server connection is not tls. connection_type=%T", rawConn)
-	}
-
-	return tlsConn, nil
 }
 
 func buildAPIServerTLSTarget(apiServerURL *url.URL) (string, error) {

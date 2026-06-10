@@ -196,7 +196,10 @@ func TestClusterService_MemberLookups(t *testing.T) {
 		})
 		soloSerf, soloErr := serf.Create(soloConf)
 		require.NoError(t, soloErr)
-		t.Cleanup(func() { soloSerf.Shutdown() }) //nolint:errcheck
+		t.Cleanup(func() {
+			err := soloSerf.Shutdown()
+			require.NoError(t, err)
+		})
 		soloSvc := &ClusterService{cluster: soloSerf}
 		assert.Nil(t, soloSvc.GetMemberByRole(agent.NodeRoleManager))
 	})
@@ -228,14 +231,18 @@ func TestClusterService_MemberLookups(t *testing.T) {
 		})
 		soloSerf, soloErr := serf.Create(soloConf)
 		require.NoError(t, soloErr)
-		t.Cleanup(func() { soloSerf.Shutdown() }) //nolint:errcheck
+		t.Cleanup(func() {
+			err := soloSerf.Shutdown()
+			require.NoError(t, err)
+		})
 		noEdgeSvc := &ClusterService{cluster: soloSerf}
 		assert.Nil(t, noEdgeSvc.GetMemberWithEdgeKeySet())
 	})
 
 	t.Run("Members excludes non-alive nodes", func(t *testing.T) {
 		// Leave the worker so it transitions away from StatusAlive.
-		wrkSerf.Leave() //nolint:errcheck
+		err := wrkSerf.Leave()
+		require.NoError(t, err)
 		require.Eventually(t, func() bool {
 			for _, m := range svc.Members() {
 				if m.NodeName == "worker-1" {
@@ -257,7 +264,10 @@ func TestClusterService_Create(t *testing.T) {
 		svc := NewClusterService(&agent.RuntimeConfig{NodeName: "solo"})
 		err := svc.Create("127.0.0.1", nil, probeTimeout, probeInterval)
 		require.NoError(t, err)
-		t.Cleanup(func() { svc.cluster.Shutdown() }) //nolint:errcheck
+		t.Cleanup(func() {
+			err := svc.cluster.Shutdown()
+			require.NoError(t, err)
+		})
 		assert.NotNil(t, svc.cluster)
 		assert.False(t, svc.rejoining.Load())
 	})
@@ -266,7 +276,10 @@ func TestClusterService_Create(t *testing.T) {
 		svc := NewSwarmClusterService(&agent.RuntimeConfig{NodeName: "swarm-node"}, "tasks.agent")
 		err := svc.Create("127.0.0.1", nil, probeTimeout, probeInterval)
 		require.NoError(t, err)
-		t.Cleanup(func() { svc.cluster.Shutdown() }) //nolint:errcheck
+		t.Cleanup(func() {
+			err := svc.cluster.Shutdown()
+			require.NoError(t, err)
+		})
 		assert.NotNil(t, svc.cluster)
 	})
 
@@ -274,7 +287,10 @@ func TestClusterService_Create(t *testing.T) {
 		svc := NewSwarmClusterService(&agent.RuntimeConfig{NodeName: "bootstrap"}, "tasks.agent")
 		err := svc.Create("127.0.0.1", []string{}, probeTimeout, probeInterval)
 		require.NoError(t, err)
-		t.Cleanup(func() { svc.cluster.Shutdown() }) //nolint:errcheck
+		t.Cleanup(func() {
+			err := svc.cluster.Shutdown()
+			require.NoError(t, err)
+		})
 		assert.NotNil(t, svc.cluster)
 	})
 
@@ -282,7 +298,10 @@ func TestClusterService_Create(t *testing.T) {
 		svc := NewSwarmClusterService(&agent.RuntimeConfig{NodeName: "node-a"}, "tasks.agent")
 		err := svc.Create("127.0.0.1", []string{"127.0.0.1:19999"}, probeTimeout, probeInterval)
 		require.NoError(t, err)
-		t.Cleanup(func() { svc.cluster.Shutdown() }) //nolint:errcheck
+		t.Cleanup(func() {
+			err := svc.cluster.Shutdown()
+			require.NoError(t, err)
+		})
 		assert.NotNil(t, svc.cluster)
 	})
 
@@ -297,7 +316,10 @@ func TestClusterService_Create(t *testing.T) {
 		}, "tasks.agent")
 		err := svc.Create("127.0.0.1", nil, probeTimeout, probeInterval)
 		require.NoError(t, err)
-		t.Cleanup(func() { svc.cluster.Shutdown() }) //nolint:errcheck
+		t.Cleanup(func() {
+			err := svc.cluster.Shutdown()
+			require.NoError(t, err)
+		})
 
 		tags := svc.cluster.LocalMember().Tags
 		assert.Equal(t, memberTagValueNodeRoleManager, tags[memberTagKeyNodeRole])
@@ -318,7 +340,10 @@ func TestClusterService_WatchClusterEvents_Filtering(t *testing.T) {
 
 		eventCh := make(chan serf.Event, 16)
 		t.Cleanup(func() { close(eventCh) })
-		t.Cleanup(func() { s.Shutdown() }) //nolint:errcheck
+		t.Cleanup(func() {
+			err := s.Shutdown()
+			require.NoError(t, err)
+		})
 
 		svc := newWorkerService(t, s, eventCh, "localhost", rejoinInterval)
 		return svc, eventCh
