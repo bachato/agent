@@ -14,6 +14,7 @@ import (
 	dockertypes "github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/build"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/go-units"
 	"github.com/gorilla/mux"
@@ -32,6 +33,22 @@ type fakeCleanupClient struct {
 
 func (c *fakeCleanupClient) DiskUsage(_ context.Context, _ dockertypes.DiskUsageOptions) (dockertypes.DiskUsage, error) {
 	return c.diskUsage, c.diskUsageErr
+}
+
+func (c *fakeCleanupClient) ContainerList(_ context.Context, _ container.ListOptions) ([]container.Summary, error) {
+	return nil, nil
+}
+
+func (c *fakeCleanupClient) ImageList(_ context.Context, _ image.ListOptions) ([]image.Summary, error) {
+	return nil, nil
+}
+
+func (c *fakeCleanupClient) ImageRemove(_ context.Context, _ string, _ image.RemoveOptions) ([]image.DeleteResponse, error) {
+	return nil, nil
+}
+
+func (c *fakeCleanupClient) BuildCachePrune(_ context.Context, _ build.CachePruneOptions) (*build.CachePruneReport, error) {
+	return nil, nil
 }
 
 func (c *fakeCleanupClient) Close() error { return nil }
@@ -57,14 +74,14 @@ func handlerWithFactory(factory agentdocker.CleanupClientFactory) *Handler {
 
 // storageResponse mirrors the JSON shape returned by the docker-storage endpoint.
 type storageResponse struct {
-	RootDir    string `json:"rootDir"`
-	TotalBytes uint64 `json:"totalBytes"`
-	DockerBytes     uint64  `json:"dockerBytes"`
-	ImageBytes      uint64  `json:"imageBytes"`
-	ContainerBytes  uint64  `json:"containerBytes"`
-	VolumeBytes     uint64  `json:"volumeBytes"`
-	BuildCacheBytes uint64  `json:"buildCacheBytes"`
-	AvailableBytes  uint64  `json:"availableBytes"`
+	RootDir         string `json:"rootDir"`
+	TotalBytes      uint64 `json:"totalBytes"`
+	DockerBytes     uint64 `json:"dockerBytes"`
+	ImageBytes      uint64 `json:"imageBytes"`
+	ContainerBytes  uint64 `json:"containerBytes"`
+	VolumeBytes     uint64 `json:"volumeBytes"`
+	BuildCacheBytes uint64 `json:"buildCacheBytes"`
+	AvailableBytes  uint64 `json:"availableBytes"`
 }
 
 func TestDockerStorageHandler_Success(t *testing.T) {

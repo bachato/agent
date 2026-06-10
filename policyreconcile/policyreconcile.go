@@ -64,7 +64,17 @@ type PollHook interface {
 	Tick(ctx context.Context, desired []portainer.PolicyID) []ActualState
 }
 
+// Registration bundles the factory and poll hooks for a policy type.
+// It is returned by each policy type's Registration() factory function and passed
+// to PollService.RegisterPolicy().
+type Registration struct {
+	Type      string         // Policy type identifier (e.g. "helm-k8s", "cleanup-docker").
+	Factory   HandlerFactory // Creates a new handler for each active policy instance.
+	PollHooks []PollHook     // Cross-poll work hooks (optional, may be nil).
+}
+
 // Reconciler is the generic per-policy reconciliation engine.
+
 // It is helm-blind: all domain logic lives inside the registered handlers.
 type Reconciler struct {
 	factories map[string]HandlerFactory

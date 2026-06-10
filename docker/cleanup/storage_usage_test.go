@@ -11,6 +11,7 @@ import (
 	dockertypes "github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/build"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,7 +29,23 @@ func (c *fakeDockerClient) DiskUsage(_ context.Context, _ dockertypes.DiskUsageO
 	return c.diskUsage, c.diskUsageErr
 }
 
+func (c *fakeDockerClient) ContainerList(_ context.Context, _ container.ListOptions) ([]container.Summary, error) {
+	return nil, nil
+}
+
+func (c *fakeDockerClient) ImageList(_ context.Context, _ image.ListOptions) ([]image.Summary, error) {
+	return nil, nil
+}
+
+func (c *fakeDockerClient) ImageRemove(_ context.Context, _ string, _ image.RemoveOptions) ([]image.DeleteResponse, error) {
+	return nil, nil
+}
+
 func (c *fakeDockerClient) Close() error { return nil }
+
+func (c *fakeDockerClient) BuildCachePrune(_ context.Context, _ build.CachePruneOptions) (*build.CachePruneReport, error) {
+	return &build.CachePruneReport{}, nil
+}
 
 func fakeFactory(client *fakeDockerClient, factoryErr error) agentdocker.CleanupClientFactory {
 	return func() (agentdocker.CleanupClient, error) {

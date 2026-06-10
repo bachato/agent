@@ -1,6 +1,7 @@
 package edge
 
 import (
+	"bufio"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -495,13 +496,18 @@ func malformedHTTPHeaderServerAddr(t *testing.T) string {
 	})
 
 	go func() {
-		conn, err := listener.Accept()
-		if err != nil {
-			return
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			// Read the request before replying so the connection closes cleanly.
+			// Closing with the request unread resets the connection, discarding the
+			// malformed reply so the client sees a reset instead of a parse error.
+			_, _ = http.ReadRequest(bufio.NewReader(conn))
+			_, _ = conn.Write([]byte("HTTP/1.1 200 OK\r\nContent-Type\r\n\r\n"))
+			_ = conn.Close()
 		}
-		defer func() { _ = conn.Close() }()
-
-		_, _ = conn.Write([]byte("HTTP/1.1 200 OK\r\nContent-Type\r\n\r\n"))
 	}()
 
 	return listener.Addr().String()
@@ -520,11 +526,17 @@ func abruptCloseServerAddr(t *testing.T) string {
 	})
 
 	go func() {
-		conn, err := listener.Accept()
-		if err != nil {
-			return
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			// Read the request before closing so the connection closes cleanly.
+			// Closing with the request unread resets the connection, which the
+			// client sees as a reset instead of the EOF this test exercises.
+			_, _ = http.ReadRequest(bufio.NewReader(conn))
+			_ = conn.Close()
 		}
-		_ = conn.Close()
 	}()
 
 	return listener.Addr().String()

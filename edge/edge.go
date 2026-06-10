@@ -12,6 +12,7 @@ import (
 
 	"github.com/portainer/agent"
 	"github.com/portainer/agent/deployer"
+	"github.com/portainer/agent/docker/cleanup"
 	"github.com/portainer/agent/edge/aws"
 	"github.com/portainer/agent/edge/client"
 	"github.com/portainer/agent/edge/policies"
@@ -170,15 +171,18 @@ func (manager *Manager) Start() error {
 	}
 	manager.pollService = pollService
 
-	// K8s platform: register the helm-k8s factory with the reconciler (per-policy
-	// payload path) and the restore coordinator as a poll hook.
+	// K8s platform: register the helm-k8s policy reconciler.
+	// SetChartReporter is still needed for the legacy per-chart status endpoint.
 	if manager.kubeClient != nil {
-		manager.pollService.RegisterReconcilerFactory(
-			"helm-k8s",
-			helm.NewHandler(manager.kubeClient, helmPackageManager, portainerClient, coordinator, chartReporter),
-		)
-		manager.pollService.RegisterPollHook(coordinator)
+		manager.pollService.RegisterPolicy(helm.Registration(
+			manager.kubeClient, helmPackageManager, portainerClient, coordinator, chartReporter,
+		))
 		manager.pollService.SetChartReporter(chartReporter)
+	}
+
+	// Docker / Podman: register the cleanup-docker policy reconciler.
+	if manager.containerPlatform == agent.PlatformDocker || manager.containerPlatform == agent.PlatformPodman {
+		manager.pollService.RegisterPolicy(cleanup.Registration())
 	}
 
 	return manager.startEdgeBackgroundProcess()

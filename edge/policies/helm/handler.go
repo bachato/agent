@@ -49,6 +49,23 @@ type HelmPolicyConfig = portainer.HelmPolicyConfig
 
 const helmPolicyType = "helm-k8s"
 
+// Registration returns a policyreconcile.Registration for helm-k8s policies.
+// The coordinator (PollHook for restore retries) is included automatically.
+// Caller must still call SetChartReporter on the PollService for legacy dual-emit.
+func Registration(
+	kube *kubernetes.KubeClient,
+	helm libhelmtypes.HelmPackageManager,
+	pc client.PortainerClient,
+	coordinator *RestoreCoordinator,
+	reporter *ChartStatusReporter,
+) policyreconcile.Registration {
+	return policyreconcile.Registration{
+		Type:      helmPolicyType,
+		Factory:   NewHandler(kube, helm, pc, coordinator, reporter),
+		PollHooks: []policyreconcile.PollHook{coordinator},
+	}
+}
+
 // HelmHandler implements policyreconcile.PolicyHandler for Helm-based K8s policies.
 // One instance is created per active policy ID by the HandlerFactory.
 type HelmHandler struct {

@@ -197,14 +197,17 @@ func newPollService(edgeManager *Manager, edgeStackManager *stack.StackManager, 
 	return pollService, nil
 }
 
-// RegisterReconcilerFactory registers a HandlerFactory with the reconciler.
-// Called at boot for each platform-specific policy handler type.
-func (service *PollService) RegisterReconcilerFactory(policyType string, f policyreconcile.HandlerFactory) {
-	service.reconciler.RegisterFactory(policyType, f)
+// RegisterPolicy registers a policy type's factory and poll hooks with the reconciler.
+// This is the preferred registration method for new policy types.
+func (service *PollService) RegisterPolicy(reg policyreconcile.Registration) {
+	service.reconciler.RegisterFactory(reg.Type, reg.Factory)
+	service.pollHooks = append(service.pollHooks, reg.PollHooks...)
 }
 
 // SetChartReporter registers the helm ChartStatusReporter used for legacy dual-emit.
 // Called at boot on K8s agents only; nil on Docker/Podman agents.
+// This is helm-specific and cannot be folded into Registration because the
+// dual-emit path consumes a concrete *helm.ChartStatusReporter.
 func (service *PollService) SetChartReporter(r *helm.ChartStatusReporter) {
 	service.chartReporter = r
 }
@@ -215,7 +218,6 @@ func (service *PollService) SetChartReporter(r *helm.ChartStatusReporter) {
 func (service *PollService) RegisterPollHook(h policyreconcile.PollHook) {
 	service.pollHooks = append(service.pollHooks, h)
 }
-
 func (service *PollService) resetActivityTimer() {
 	if service.tunnelClient != nil && service.tunnelClient.IsTunnelOpen() {
 		service.updateLastActivitySignal <- struct{}{}
@@ -836,7 +838,8 @@ func (service *PollService) reconcilePolicies(states []portainer.PolicyDesiredSt
 	}
 
 	// New per-policy status endpoint.
-	allStatuses := append(service.reconciler.Statuses(), hookStatuses...)
+	// Hook statuses override the reconciler's base entries (last-wins dedup by policy ID).
+	allStatuses := deduplicateStatuses(append(service.reconciler.Statuses(), hookStatuses...))
 	if err := service.portainerClient.ReportPolicyStatuses(toPolicyActualStates(allStatuses)); err != nil {
 		log.Debug().Err(err).Str("context", "PolicyStatusReporting").Msg("ReportPolicyStatuses failed")
 	}
@@ -912,6 +915,23 @@ func toPolicyActualStates(states []policyreconcile.ActualState) []portainer.Poli
 			Fingerprint: s.Fingerprint,
 			Status:      string(s.Status),
 			Message:     s.Message,
+		}
+	}
+	return out
+}
+
+// deduplicateStatuses keeps the last entry per PolicyID. PollHook statuses are
+// appended after reconciler statuses, so "last wins" gives hooks priority — their
+// enriched messages override the reconciler's default empty-message entries.
+func deduplicateStatuses(states []policyreconcile.ActualState) []policyreconcile.ActualState {
+	seen := make(map[portainer.PolicyID]int, len(states))
+	out := make([]policyreconcile.ActualState, 0, len(states))
+	for _, s := range states {
+		if idx, exists := seen[s.PolicyID]; exists {
+			out[idx] = s
+		} else {
+			seen[s.PolicyID] = len(out)
+			out = append(out, s)
 		}
 	}
 	return out

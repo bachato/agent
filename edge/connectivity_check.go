@@ -6,12 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
-	"syscall"
 
 	agent "github.com/portainer/agent"
 	"github.com/portainer/agent/chisel"
@@ -203,7 +201,7 @@ func HasServerConnectivity(options *agent.Options) bool {
 			allPassed = false
 		} else {
 			resp, err := httpClient.DoConnectivityCheck(req)
-			if err != nil && isTunnelProbeConnectionError(err) {
+			if !isTunnelProbeReachable(err) {
 				fmt.Printf("FAIL: Failed to reach Portainer tunnel server at %s: %v\n", params.tunnelAddr, err)
 				allPassed = false
 			} else {
@@ -219,18 +217,13 @@ func HasServerConnectivity(options *agent.Options) bool {
 	return allPassed
 }
 
-func isTunnelProbeConnectionError(err error) bool {
-	// Fail only on transport-level errors.
-	// A malformed HTTP response still means the tunnel port is reachable.
-	// Transport errors wrap net.OpError, EOF, or a syscall.Errno.
-	// HTTP parsing errors (e.g. textproto.ProtocolError) are string-based
-	// and never wrap syscall.Errno, so they fall through to PASS.
-	if errors.As(err, new(*net.OpError)) {
+// isTunnelProbeReachable reports whether the tunnel port answered the probe.
+// A nil error or a "transport connection broken" error (an unparseable reply,
+// e.g. from a chisel tunnel) means it answered; any other error means it did not.
+func isTunnelProbeReachable(err error) bool {
+	if err == nil {
 		return true
 	}
-	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-		return true
-	}
-	var errno syscall.Errno
-	return errors.As(err, &errno)
+
+	return strings.Contains(err.Error(), "transport connection broken")
 }
