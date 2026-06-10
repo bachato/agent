@@ -14,6 +14,8 @@ import (
 )
 
 func (handler *Handler) dockerOperation(rw http.ResponseWriter, request *http.Request) *httperror.HandlerError {
+	injectUnpackerProxyEnv(request)
+
 	if handler.clusterService == nil {
 		handler.dockerProxy.ServeHTTP(rw, request)
 		return nil
