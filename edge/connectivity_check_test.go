@@ -272,6 +272,23 @@ func TestCheckConnectivity_TunnelPassWithMalformedHTTPResponse(t *testing.T) {
 	}
 }
 
+func TestCheckConnectivity_WhitespaceTunnelAddrSkipped(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	opts := defaultOptions()
+	opts.EdgeConnectivityCheckURL = srv.URL
+	opts.EdgeConnectivityCheckTunnel = "   "
+	opts.EdgeInsecurePoll = true
+
+	ok := HasServerConnectivity(opts)
+	if !ok {
+		t.Errorf("expected true when tunnel address is whitespace-only (treated as absent), got %v", ok)
+	}
+}
+
 func TestCheckConnectivity_TunnelFail(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

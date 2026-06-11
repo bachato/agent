@@ -49,6 +49,7 @@ var collectNodeConditionsFn = kubernetes.CollectNodeConditions
 var collectEtcdHealthFn = kubernetes.CollectEtcdHealth
 var collectAPIServerCertFn = kubernetes.CollectAPIServerCert
 var collectAPIServerHealthFn = kubernetes.CollectAPIServerHealth
+var collectAPIServerLatencyFn = kubernetes.CollectAPIServerRequestLatency
 
 func buildMetricsScrapeTarget(apiServerAddr string) string {
 	if host, port, err := net.SplitHostPort(apiServerAddr); err == nil {
@@ -623,6 +624,21 @@ func (service *PollService) pushPerformanceMetrics(ctx context.Context) {
 	apiServerHealthy := collectAPIServerHealthFn(ctx, service.edgeManager.kubeClient)
 	service.metricsHandler.UpdateAPIServerHealthMetrics(apiServerHealthy)
 	log.Debug().Bool("healthy", apiServerHealthy).Msg("metric-tick: API server health gauge updated")
+
+	latencyHistogram, latencyErr := collectAPIServerLatencyFn(ctx, service.edgeManager.kubeClient)
+	if latencyErr != nil {
+		if errors.Is(latencyErr, kubernetes.ErrAPIServerRequestLatencyUnsupported) {
+			service.metricsHandler.ClearAPIServerLatencyMetrics()
+			log.Debug().Err(latencyErr).Msg("metric-tick: API server request latency unsupported, cleared latency gauges")
+		} else {
+			// Transient scrape error: keep the last published cumulative buckets so
+			// the evaluator's rate() window tolerates the gap rather than resetting.
+			log.Warn().Err(latencyErr).Msg("metric-tick: failed to collect API server request latency, retaining last latency gauges")
+		}
+	} else {
+		service.metricsHandler.UpdateAPIServerLatencyMetrics(latencyHistogram)
+		log.Debug().Int("bucket_count", len(latencyHistogram.Buckets)).Msg("metric-tick: API server request latency gauges updated")
+	}
 }
 
 func (service *PollService) publishAlertState() {

@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"net/http"
+	"strconv"
 	"sync"
 
 	"github.com/portainer/agent/kubernetes"
@@ -34,6 +35,8 @@ type Handler struct {
 	etcdHealthy            prometheusreg.Gauge
 	etcdHealthValid        prometheusreg.Gauge
 	apiServerTLSCertExpiry *prometheusreg.GaugeVec
+	apiServerLatencyBucket *prometheusreg.GaugeVec
+	apiServerLatencyCount  prometheusreg.Gauge
 	apiServerHealthy       prometheusreg.Gauge
 }
 
@@ -70,6 +73,18 @@ func NewHandler() *Handler {
 	}, []string{"source", "cn"})
 	reg.MustRegister(tlsCertExpiry)
 
+	apiServerLatencyBucket := prometheusreg.NewGaugeVec(prometheusreg.GaugeOpts{
+		Name: pkgmetrics.ClusterAPIServerRequestLatencySecondsBucketMetric,
+		Help: "Cumulative API server request-duration histogram buckets, pooled across all verbs and resources. Use with histogram_quantile(0.99, rate(...)).",
+	}, []string{"le"})
+	reg.MustRegister(apiServerLatencyBucket)
+
+	apiServerLatencyCount := prometheusreg.NewGauge(prometheusreg.GaugeOpts{
+		Name: pkgmetrics.ClusterAPIServerRequestLatencySecondsCountMetric,
+		Help: "Total API server request observations, pooled across all verbs and resources",
+	})
+	reg.MustRegister(apiServerLatencyCount)
+
 	apiServerHealthy := prometheusreg.NewGauge(prometheusreg.GaugeOpts{
 		Name: pkgmetrics.ClusterAPIServerHealthyMetric,
 		Help: "1 if the API server reports healthy on /livez, 0 otherwise",
@@ -89,6 +104,8 @@ func NewHandler() *Handler {
 		etcdHealthy:            etcdHealthy,
 		etcdHealthValid:        etcdHealthValid,
 		apiServerTLSCertExpiry: tlsCertExpiry,
+		apiServerLatencyBucket: apiServerLatencyBucket,
+		apiServerLatencyCount:  apiServerLatencyCount,
 		apiServerHealthy:       apiServerHealthy,
 	}
 	reg.MustRegister(h)
@@ -177,6 +194,31 @@ func (h *Handler) UpdateAPIServerTLSCertMetrics(certs []kubernetes.TLSCertInfo) 
 // ClearAPIServerTLSCertMetrics removes all published API server TLS cert gauges.
 func (h *Handler) ClearAPIServerTLSCertMetrics() {
 	h.apiServerTLSCertExpiry.Reset()
+}
+
+// UpdateAPIServerLatencyMetrics republishes the pooled API server request-duration
+// histogram as le-labelled bucket gauges plus a total observation count. The
+// evaluator computes the p99 from these via histogram_quantile(0.99, rate(...)).
+func (h *Handler) UpdateAPIServerLatencyMetrics(histogram kubernetes.APIServerLatencyHistogram) {
+	h.apiServerLatencyBucket.Reset()
+
+	for le, count := range histogram.Buckets {
+		h.apiServerLatencyBucket.WithLabelValues(formatBucketBound(le)).Set(count)
+	}
+
+	h.apiServerLatencyCount.Set(histogram.Count)
+}
+
+// ClearAPIServerLatencyMetrics removes all published API server latency gauges.
+func (h *Handler) ClearAPIServerLatencyMetrics() {
+	h.apiServerLatencyBucket.Reset()
+	h.apiServerLatencyCount.Set(0)
+}
+
+// formatBucketBound renders a histogram bucket upper bound as a Prometheus "le"
+// label value (e.g. 0.005, +Inf).
+func formatBucketBound(le float64) string {
+	return strconv.FormatFloat(le, 'g', -1, 64)
 }
 
 // UpdateAPIServerHealthMetrics sets the API server health gauge.

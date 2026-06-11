@@ -33,10 +33,11 @@ func resolveCheckParams(options *agent.Options) (*connectivityCheckParams, error
 			return nil, err
 		}
 
+		tunnelAddr := strings.TrimSpace(options.EdgeConnectivityCheckTunnel)
 		params := &connectivityCheckParams{
 			portainerURL: portainerURL,
-			tunnelAddr:   options.EdgeConnectivityCheckTunnel,
-			skipTunnel:   options.EdgeAsyncMode || !options.EdgeTunnel || options.EdgeConnectivityCheckTunnel == "",
+			tunnelAddr:   tunnelAddr,
+			skipTunnel:   options.EdgeAsyncMode || !options.EdgeTunnel || tunnelAddr == "",
 		}
 
 		return validateCheckParams(params, options)
@@ -56,10 +57,11 @@ func resolveCheckParams(options *agent.Options) (*connectivityCheckParams, error
 		return nil, err
 	}
 
+	tunnelAddr := strings.TrimSpace(key.TunnelServerAddr)
 	params := &connectivityCheckParams{
 		portainerURL: portainerURL,
-		tunnelAddr:   key.TunnelServerAddr,
-		skipTunnel:   options.EdgeAsyncMode || !options.EdgeTunnel || key.TunnelServerAddr == "",
+		tunnelAddr:   tunnelAddr,
+		skipTunnel:   options.EdgeAsyncMode || !options.EdgeTunnel || tunnelAddr == "",
 	}
 
 	return validateCheckParams(params, options)
@@ -171,9 +173,8 @@ func HasServerConnectivity(options *agent.Options) bool {
 	httpClient := client.BuildHTTPClient(client.DefaultHTTPClientTimeoutSeconds, options)
 
 	if options.EdgeTunnelProxy != "" {
-		if proxyURL, err := url.Parse(options.EdgeTunnelProxy); err == nil {
-			httpClient.SetProxy(proxyURL)
-		}
+		proxyURL, _ := url.Parse(options.EdgeTunnelProxy)
+		httpClient.SetProxy(proxyURL)
 	}
 
 	// intentionally use fmt.Printf instead of log.x() calls, so that Pass/Fail connectivity results are most obvious and aren't hidden in log formatting

@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -172,6 +173,60 @@ func TestClearTLSCertMetricsRemovesPublishedSeries(t *testing.T) {
 	body := serveMetrics(t, h)
 	require.Contains(t, body, pkgmetrics.ClusterCPUUsageCoresMetric)
 	require.NotContains(t, body, pkgmetrics.ClusterAPIServerTLSCertExpirySecondsMetric)
+}
+
+func TestUpdateAPIServerLatencyMetricsPublishesBuckets(t *testing.T) {
+	h := NewHandler()
+
+	h.UpdateAPIServerLatencyMetrics(kubernetes.APIServerLatencyHistogram{
+		Buckets: map[float64]float64{0.1: 40, 0.5: 95, math.Inf(1): 100},
+		Count:   100,
+	})
+
+	body := serveMetrics(t, h)
+	require.Contains(t, body, pkgmetrics.ClusterAPIServerRequestLatencySecondsBucketMetric+"{le=\"0.1\"} 40")
+	require.Contains(t, body, pkgmetrics.ClusterAPIServerRequestLatencySecondsBucketMetric+"{le=\"+Inf\"} 100")
+	require.Contains(t, body, pkgmetrics.ClusterAPIServerRequestLatencySecondsCountMetric+" 100")
+}
+
+func TestUpdateAPIServerLatencyMetricsReplacesBuckets(t *testing.T) {
+	h := NewHandler()
+
+	h.UpdateAPIServerLatencyMetrics(kubernetes.APIServerLatencyHistogram{
+		Buckets: map[float64]float64{0.1: 5, 0.2: 9, math.Inf(1): 10},
+		Count:   10,
+	})
+
+	h.UpdateAPIServerLatencyMetrics(kubernetes.APIServerLatencyHistogram{
+		Buckets: map[float64]float64{0.1: 7, math.Inf(1): 8},
+		Count:   8,
+	})
+
+	body := serveMetrics(t, h)
+	require.NotContains(t, body, pkgmetrics.ClusterAPIServerRequestLatencySecondsBucketMetric+"{le=\"0.2\"}")
+	require.Contains(t, body, pkgmetrics.ClusterAPIServerRequestLatencySecondsBucketMetric+"{le=\"0.1\"} 7")
+	require.Contains(t, body, pkgmetrics.ClusterAPIServerRequestLatencySecondsCountMetric+" 8")
+}
+
+func TestClearAPIServerLatencyMetricsRemovesPublishedSeries(t *testing.T) {
+	h := NewHandler()
+
+	h.UpdateMetrics(&kubernetes.ClusterRawMetrics{
+		HasCPU:               true,
+		CPUUsageNanoCores:    1_000_000_000,
+		CPUCapacityNanoCores: 2_000_000_000,
+	})
+	h.UpdateAPIServerLatencyMetrics(kubernetes.APIServerLatencyHistogram{
+		Buckets: map[float64]float64{0.1: 40, math.Inf(1): 100},
+		Count:   100,
+	})
+
+	h.ClearAPIServerLatencyMetrics()
+
+	body := serveMetrics(t, h)
+	require.Contains(t, body, pkgmetrics.ClusterCPUUsageCoresMetric)
+	require.NotContains(t, body, pkgmetrics.ClusterAPIServerRequestLatencySecondsBucketMetric+"{")
+	require.Contains(t, body, pkgmetrics.ClusterAPIServerRequestLatencySecondsCountMetric+" 0")
 }
 
 func serveMetrics(t *testing.T, h *Handler) string {
