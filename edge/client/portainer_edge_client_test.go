@@ -268,10 +268,10 @@ func TestReportPolicyStatuses_SuccessOn204(t *testing.T) {
 	t.Parallel()
 	fips.InitFIPS(false)
 
-	var requests int32
+	var requests atomic.Int32
 	httpClient := BuildHTTPClient(30, &agent.Options{})
 	httpClient.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		atomic.AddInt32(&requests, 1)
+		requests.Add(1)
 		require.Equal(t, http.MethodPut, r.Method)
 		require.Equal(t, "/api/endpoints/1/edge/policies/statuses", r.URL.Path)
 		require.Equal(t, "edge-id", r.Header.Get(agent.HTTPEdgeIdentifierHeaderName))
@@ -294,7 +294,7 @@ func TestReportPolicyStatuses_SuccessOn204(t *testing.T) {
 		{PolicyID: 1, Type: "helm-k8s", Fingerprint: "fp", Status: "applied"},
 	})
 	require.NoError(t, err)
-	assert.Equal(t, int32(1), atomic.LoadInt32(&requests), "exactly one request must be sent")
+	assert.Equal(t, int32(1), requests.Load(), "exactly one request must be sent")
 }
 
 // TestReportPolicyStatuses_DoesNotRetryOnNon204 verifies that a non-204 response
@@ -305,10 +305,10 @@ func TestReportPolicyStatuses_DoesNotRetryOnNon204(t *testing.T) {
 	t.Parallel()
 	fips.InitFIPS(false)
 
-	var requests int32
+	var requests atomic.Int32
 	httpClient := BuildHTTPClient(30, &agent.Options{})
 	httpClient.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		atomic.AddInt32(&requests, 1)
+		requests.Add(1)
 		return &http.Response{
 			StatusCode: http.StatusNotFound,
 			Body:       io.NopCloser(strings.NewReader("")),
@@ -326,7 +326,7 @@ func TestReportPolicyStatuses_DoesNotRetryOnNon204(t *testing.T) {
 
 	err := c.ReportPolicyStatuses(nil)
 	require.NoError(t, err, "non-204 must not return an error (logged at Debug only)")
-	assert.Equal(t, int32(1), atomic.LoadInt32(&requests), "must not retry on non-204")
+	assert.Equal(t, int32(1), requests.Load(), "must not retry on non-204")
 }
 
 // TestReportPolicyStatuses_ReturnsErrorOnTransportFailure verifies that a transport-
