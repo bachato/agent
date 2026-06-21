@@ -8,6 +8,7 @@ import (
 type options struct {
 	version           string
 	dockerSnapshotter DockerSnapshotter
+	gpuOperator       bool
 }
 
 func defaultOptions() *options {
@@ -28,5 +29,11 @@ func WithVersion(version string) Option {
 func WithDockerSnapshotter(snapshotter DockerSnapshotter) Option {
 	return func(o *options) {
 		o.dockerSnapshotter = snapshotter
+	}
+}
+
+func WithGPUOperator(enabled bool) Option {
+	return func(o *options) {
+		o.gpuOperator = enabled
 	}
 }

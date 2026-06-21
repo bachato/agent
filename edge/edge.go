@@ -126,6 +126,7 @@ func (manager *Manager) Start() error {
 		agentPlatform,
 		manager.agentOptions.EdgeMetaFields,
 		client.BuildHTTPClient(client.DefaultHTTPClientTimeoutSeconds, manager.agentOptions),
+		manager.agentOptions.GPUOperator,
 	)
 
 	manager.stackManager = stack.NewStackManager(

@@ -65,6 +65,7 @@ type PortainerAsyncClient struct {
 	policyHelmCharts *PolicyHelmCharts
 
 	createSnapshotFn DockerSnapshotter
+	gpuOperator      bool
 }
 
 // NewPortainerAsyncClient returns a pointer to a new PortainerAsyncClient instance
@@ -98,6 +99,7 @@ func NewPortainerAsyncClient(
 		pendingESCommandsTS:     make(map[portainer.EdgeStackID]versionAndTS),
 		metaFields:              metaFields,
 		createSnapshotFn:        clientOpts.dockerSnapshotter,
+		gpuOperator:             clientOpts.gpuOperator,
 		liveLogCollectors:       make(map[string]*LiveLogCollector),
 	}
 }
@@ -369,6 +371,7 @@ func (client *PortainerAsyncClient) executeAsyncRequest(payload AsyncRequest, po
 	req.Header.Set(agent.HTTPResponseAgentTimeZone, client.timeZoneStr)
 	req.Header.Set(agent.HTTPResponseUpdateIDHeaderName, strconv.Itoa(client.metaFields.UpdateID))
 	req.Header.Set(agent.HTTPResponseAgentPlatform, strconv.Itoa(int(client.agentPlatformIdentifier)))
+	req.Header.Set(agent.HTTPResponseAgentGPUOperator, strconv.FormatBool(client.gpuOperator))
 
 	// Send container engine info only during initialization (endpointID == 0)
 	if client.getEndpointIDFn() == 0 {
@@ -644,7 +647,7 @@ outerLoop:
 }
 
 func (client *PortainerAsyncClient) createKubernetesSnapshot(payload *AsyncRequest, currentSnapshot *snapshot) {
-	kubeSnapshot, err := kubernetes.CreateSnapshot(client.edgeKey)
+	kubeSnapshot, err := kubernetes.CreateSnapshot(client.edgeKey, client.gpuOperator)
 	if err != nil {
 		log.Warn().Err(err).Msg("could not create the Kubernetes snapshot")
 
@@ -672,7 +675,7 @@ func (client *PortainerAsyncClient) createKubernetesSnapshot(payload *AsyncReque
 
 	payload.Snapshot.KubernetesPatch = kubePatch
 	payload.Snapshot.KubernetesHash = &h
-	payload.Snapshot.KubernetesPatch = nil
+	payload.Snapshot.Kubernetes = nil
 }
 
 func (client *PortainerAsyncClient) getEdgeStackLogs(payload *AsyncRequest) {

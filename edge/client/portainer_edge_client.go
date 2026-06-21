@@ -36,6 +36,7 @@ type PortainerEdgeClient struct {
 	metaFields       agent.EdgeMetaFields
 	reqCache         *lru.Cache
 	alertStateHeader string
+	gpuOperator      bool
 }
 
 type globalKeyResponse struct {
@@ -92,6 +93,7 @@ func NewPortainerEdgeClient(
 		agentPlatform:   agentPlatform,
 		httpClient:      httpClient,
 		metaFields:      metaFields,
+		gpuOperator:     clientOpts.gpuOperator,
 	}
 
 	cache, err := lru.New(8)
@@ -206,6 +208,8 @@ func (client *PortainerEdgeClient) GetEnvironmentStatus(flags ...string) (*PollS
 	if containerEngine := aos.GetContainerEngineName(aos.DetermineContainerPlatform()); containerEngine != "" {
 		req.Header.Set(agent.HTTPResponseAgentContainerEngine, containerEngine)
 	}
+
+	req.Header.Set(agent.HTTPResponseAgentGPUOperator, strconv.FormatBool(client.gpuOperator))
 
 	if client.alertStateHeader != "" {
 		req.Header.Set(agent.HTTPAlertStateHeaderName, client.alertStateHeader)

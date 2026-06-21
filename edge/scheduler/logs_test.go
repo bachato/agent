@@ -23,6 +23,7 @@ func TestDataRace(t *testing.T) {
 		agent.PlatformDocker,
 		agent.EdgeMetaFields{},
 		client.BuildHTTPClient(10, &agent.Options{}),
+		false,
 	)
 
 	m := NewLogsManager(cli)

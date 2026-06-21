@@ -119,6 +119,7 @@ type (
 		AWSProfileARN               string
 		AWSRegion                   string
 		PullLimitCheckDisabled      bool
+		GPUOperator                 bool
 	}
 
 	// PciDevice is the representation of a physical pci device on a host
@@ -291,6 +292,7 @@ const (
 	HTTPResponseAgentContainerEngine = "Portainer-Agent-Container-Engine"
 	// HTTPAlertStateHeaderName is the name of the header used to transmit edge alert evaluation state.
 	HTTPAlertStateHeaderName = "X-PortainerAgent-AlertState"
+	HTTPResponseAgentGPUOperator = "Portainer-Agent-GPU-Operator"
 	// PortainerAgentSignatureMessage is the unhashed content that is signed by the Portainer instance.
 	// It is used by the agent during the signature verification process.
 	PortainerAgentSignatureMessage = "Portainer-App"

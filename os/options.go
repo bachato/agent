@@ -52,6 +52,7 @@ const (
 	EnvKeyEdgeConnectivityCheck       = "EDGE_CONNECTIVITY_CHECK"
 	EnvKeyEdgeConnectivityCheckURL    = "EDGE_CONNECTIVITY_CHECK_URL"
 	EnvKeyEdgeConnectivityCheckTunnel = "EDGE_CONNECTIVITY_CHECK_TUNNEL_ADDR"
+	EnvKeyWithGPUOperator             = "WITH_GPU_OPERATOR"
 )
 
 type EnvOptionParser struct{}
@@ -105,7 +106,8 @@ var (
 	fAWSProfileARN     = kingpin.Flag("aws-profile-arn", "AWS profile ARN used to pull policies from (IAM Roles Anywhere authentication)").Envar(EnvKeyAWSProfileARN).String()
 	fAWSRegion         = kingpin.Flag("aws-region", "AWS region used when signing against IAM Roles Anywhere").Envar(EnvKeyAWSRegion).String()
 
-	fFipsMode = kingpin.Flag("fips-mode", EnvKeyFipsMode+" enable FIPS mode. Disabled by default, set to 1 or true to enable it").Hidden().Envar(EnvKeyFipsMode).Bool()
+	fFipsMode      = kingpin.Flag("fips-mode", EnvKeyFipsMode+" enable FIPS mode. Disabled by default, set to 1 or true to enable it").Hidden().Envar(EnvKeyFipsMode).Bool()
+	fWithGPUOperator = kingpin.Flag("with-gpu-operator", EnvKeyWithGPUOperator+" enable GPU operator scraping. Disabled by default, set to 1 or true to enable it").Hidden().Envar(EnvKeyWithGPUOperator).Bool()
 
 	fEdgeConnectivityCheck       = kingpin.Flag("edge-connectivity-check", EnvKeyEdgeConnectivityCheck+" run a one-shot connectivity check and exit").Envar(EnvKeyEdgeConnectivityCheck).Bool()
 	fEdgeConnectivityCheckURL    = kingpin.Flag("edge-connectivity-check-url", EnvKeyEdgeConnectivityCheckURL+" Portainer API URL for connectivity check (overrides EDGE_KEY)").Envar(EnvKeyEdgeConnectivityCheckURL).String()
@@ -180,6 +182,7 @@ func (parser EnvOptionParser) Options() (*agent.Options, error) {
 			UpdateID:           *fUpdateID,
 		},
 		PullLimitCheckDisabled: *fPullLimitCheckDisabled,
+		GPUOperator:            *fWithGPUOperator,
 	}, nil
 }
 
