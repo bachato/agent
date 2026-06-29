@@ -647,7 +647,7 @@ outerLoop:
 }
 
 func (client *PortainerAsyncClient) createKubernetesSnapshot(payload *AsyncRequest, currentSnapshot *snapshot) {
-	kubeSnapshot, err := kubernetes.CreateSnapshot(client.edgeKey, client.gpuOperator)
+	kubeSnapshot, err := kubernetes.CreateSnapshot(client.edgeKey)
 	if err != nil {
 		log.Warn().Err(err).Msg("could not create the Kubernetes snapshot")
 

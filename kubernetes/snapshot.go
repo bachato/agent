@@ -9,7 +9,7 @@ import (
 )
 
 // CreateSnapshot creates a snapshot of a specific Kubernetes environment(endpoint)
-func CreateSnapshot(edgeKey string, gpuOperator bool) (*portainer.KubernetesSnapshot, error) {
+func CreateSnapshot(edgeKey string) (*portainer.KubernetesSnapshot, error) {
 	cli, err := BuildLocalClient()
 	if err != nil {
 		return nil, fmt.Errorf("unable to create Kubernetes client. Error: %w", err)
@@ -20,7 +20,7 @@ func CreateSnapshot(edgeKey string, gpuOperator bool) (*portainer.KubernetesSnap
 		return nil, fmt.Errorf("failed to ping /healthz endpoint. Error: %w", res.Error())
 	}
 
-	kubernetesSnapshot, err := snapshot.CreateKubernetesSnapshot(cli, gpuOperator)
+	kubernetesSnapshot, err := snapshot.CreateKubernetesSnapshot(cli)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create Kubernetes snapshot. Error: %w", err)
 	}
